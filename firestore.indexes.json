@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "snaps",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "shelfId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,1494 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+
+import { useAuth } from '@/features/auth/useAuth';
+import { subscribeToAllSnaps } from '@/features/snaps/api';
+import { formatCapturedAt, getShelfCoverSnap, getShelfPalette, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
+import { searchSnaps } from '@/features/snaps/search';
+import type { Snap } from '@/features/snaps/types';
+import {
+  bootstrapShelfPlacement,
+  createShelf,
+  getDefaultShelfPlacement,
+  subscribeToShelves,
+  updateShelfPosition,
+} from '@/features/shelves/api';
+import type { Shelf, ShelfBoardVariant } from '@/features/shelves/types';
+import { createShelfThread, subscribeToThreads } from '@/features/threads/api';
+import type { ShelfThread } from '@/features/threads/types';
+import { AppHeader } from '@/shared/components/AppHeader';
+import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
+import { EmptyState } from '@/shared/components/EmptyState';
+import { Screen } from '@/shared/components/Screen';
+import { SectionLabel } from '@/shared/components/SectionLabel';
+import { SnapArtwork } from '@/shared/components/SnapArtwork';
+import { SurfaceCard } from '@/shared/components/SurfaceCard';
+import { theme } from '@/shared/theme';
+import { textStyles } from '@/shared/theme/typography';
+
+const CANVAS_WIDTH = 980;
+const CANVAS_HEIGHT = 1360;
+const ABSOLUTE_MIN_SCALE = 0.45;
+const MAX_SCALE = 1.9;
+const BOARD_TOP_GUTTER = 28;
+const BOARD_SIDE_GUTTER = 22;
+const BOARD_BOTTOM_GUTTER = 32;
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+type BoardTransform = Point & {
+  scale: number;
+};
+
+type Bounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+type BoardViewMode = 'grid' | 'list';
+
+function isBoardViewMode(value: string | null): value is BoardViewMode {
+  return value === 'grid' || value === 'list';
+}
+
+function getBoardViewModeStorageKey(userId: string) {
+  return `board-view-mode:${userId}`;
+}
+
+function DottedCanvas() {
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: 0.85,
+      }}
+    >
+      {Array.from({ length: 18 }).map((_, row) => (
+        <View
+          key={`row-${row}`}
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            marginTop: row === 0 ? 0 : 72,
+            paddingHorizontal: 2,
+          }}
+        >
+          {Array.from({ length: 10 }).map((__, column) => (
+            <View
+              key={`dot-${row}-${column}`}
+              style={{
+                width: 3,
+                height: 3,
+                borderRadius: 999,
+                backgroundColor: theme.colors.dot,
+              }}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getFitScale(bounds: Bounds, viewport: Point) {
+  if (viewport.x === 0 || viewport.y === 0) {
+    return 1;
+  }
+
+  const availableWidth = Math.max(0, viewport.x - BOARD_SIDE_GUTTER * 2);
+  const availableHeight = Math.max(0, viewport.y - BOARD_TOP_GUTTER - BOARD_BOTTOM_GUTTER);
+  const contentWidth = Math.max(bounds.maxX - bounds.minX, 1);
+  const contentHeight = Math.max(bounds.maxY - bounds.minY, 1);
+
+  return clamp(Math.min(availableWidth / contentWidth, availableHeight / contentHeight, 1), ABSOLUTE_MIN_SCALE, 1);
+}
+
+function getContentBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>): Bounds {
+  if (shelves.length === 0) {
+    return {
+      minX: 0,
+      minY: 0,
+      maxX: CANVAS_WIDTH,
+      maxY: CANVAS_HEIGHT,
+    };
+  }
+
+  const bounds = getShelfBounds(shelves);
+
+  return {
+    minX: clamp(bounds.minX - 36, 0, CANVAS_WIDTH),
+    minY: clamp(bounds.minY - 24, 0, CANVAS_HEIGHT),
+    maxX: clamp(bounds.maxX + 36, 0, CANVAS_WIDTH),
+    maxY: clamp(bounds.maxY + 60, 0, CANVAS_HEIGHT),
+  };
+}
+
+function clampTransform(transform: BoardTransform, viewport: Point, bounds: Bounds): BoardTransform {
+  const minScale = getFitScale(bounds, viewport);
+  const contentWidth = (bounds.maxX - bounds.minX) * transform.scale;
+  const contentHeight = (bounds.maxY - bounds.minY) * transform.scale;
+  const availableWidth = Math.max(0, viewport.x - BOARD_SIDE_GUTTER * 2);
+  const availableHeight = Math.max(0, viewport.y - BOARD_TOP_GUTTER - BOARD_BOTTOM_GUTTER);
+
+  const centeredX = viewport.x / 2 - (bounds.minX + (bounds.maxX - bounds.minX) / 2) * transform.scale;
+  const leftAlignedX = BOARD_SIDE_GUTTER - bounds.minX * transform.scale;
+  const rightAlignedX = viewport.x - BOARD_SIDE_GUTTER - bounds.maxX * transform.scale;
+
+  const x =
+    contentWidth <= availableWidth
+      ? centeredX
+      : clamp(transform.x, Math.min(rightAlignedX, leftAlignedX), Math.max(rightAlignedX, leftAlignedX));
+
+  const topAlignedY = BOARD_TOP_GUTTER - bounds.minY * transform.scale;
+  const bottomAlignedY = viewport.y - BOARD_BOTTOM_GUTTER - bounds.maxY * transform.scale;
+
+  const y =
+    contentHeight <= availableHeight
+      ? topAlignedY
+      : clamp(transform.y, Math.min(bottomAlignedY, topAlignedY), Math.max(bottomAlignedY, topAlignedY));
+
+  return {
+    scale: clamp(transform.scale, minScale, MAX_SCALE),
+    x,
+    y,
+  };
+}
+
+function getDistance(first: Point, second: Point) {
+  const dx = first.x - second.x;
+  const dy = first.y - second.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getMidpoint(first: Point, second: Point): Point {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  };
+}
+
+function getNodeDimensions(variant: ShelfBoardVariant) {
+  switch (variant) {
+    case 'primary':
+      return { width: 196, height: 196 };
+    case 'arch':
+      return { width: 116, height: 152 };
+    case 'circle-large':
+      return { width: 140, height: 140 };
+    case 'circle-small':
+      return { width: 92, height: 92 };
+    case 'circle-medium':
+      return { width: 154, height: 154 };
+    case 'tall':
+      return { width: 76, height: 152 };
+  }
+}
+
+function getResolvedShelf(shelf: Shelf, index: number) {
+  const fallback = getDefaultShelfPlacement(index);
+
+  return {
+    ...shelf,
+    boardX: shelf.boardX ?? fallback.boardX,
+    boardY: shelf.boardY ?? fallback.boardY,
+    boardVariant: shelf.boardVariant ?? fallback.boardVariant,
+  };
+}
+
+function getNodeCenter(shelf: ReturnType<typeof getResolvedShelf>) {
+  const dimensions = getNodeDimensions(shelf.boardVariant);
+
+  return {
+    x: shelf.boardX + dimensions.width / 2,
+    y: shelf.boardY + dimensions.height / 2,
+  };
+}
+
+function getShelfBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>) {
+  const bounds = shelves.reduce(
+    (current, shelf) => {
+      const dimensions = getNodeDimensions(shelf.boardVariant);
+
+      return {
+        minX: Math.min(current.minX, shelf.boardX),
+        minY: Math.min(current.minY, shelf.boardY),
+        maxX: Math.max(current.maxX, shelf.boardX + dimensions.width),
+        maxY: Math.max(current.maxY, shelf.boardY + dimensions.height + 54),
+      };
+    },
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    },
+  );
+
+  return bounds;
+}
+
+function renderThread(from: Point, to: Point, key: string) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+  return (
+    <View
+      key={key}
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: from.x + dx / 2 - length / 2,
+        top: from.y + dy / 2,
+        width: length,
+        borderStyle: 'dashed',
+        borderWidth: 1.5,
+        borderColor: theme.colors.thread,
+        transform: [{ rotate: `${angle}deg` }],
+      }}
+    />
+  );
+}
+
+function CircleVisual({ size, colors, snap }: { size: number; colors: [string, string]; snap: Snap | null }) {
+  return (
+    <SnapArtwork
+      snap={snap}
+      fallbackColors={colors}
+      style={{
+        width: size - 20,
+        height: size - 20,
+        borderRadius: (size - 20) / 2,
+        justifyContent: 'space-between',
+        padding: 14,
+      }}
+    >
+      <View
+        style={{
+          alignSelf: 'flex-end',
+          width: 34,
+          height: 34,
+          borderRadius: 17,
+          backgroundColor: 'rgba(255,255,255,0.22)',
+        }}
+      />
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+        <View
+          style={{
+            width: 26,
+            height: 38,
+            borderRadius: 14,
+            backgroundColor: 'rgba(255,255,255,0.18)',
+          }}
+        />
+        <View
+          style={{
+            flex: 1,
+            height: 22,
+            borderRadius: 999,
+            backgroundColor: 'rgba(255,255,255,0.2)',
+          }}
+        />
+      </View>
+    </SnapArtwork>
+  );
+}
+
+function ArchVisual({ width, height, colors, snap }: { width: number; height: number; colors: [string, string]; snap: Snap | null }) {
+  return (
+    <SnapArtwork
+      snap={snap}
+      fallbackColors={colors}
+      style={{
+        width: width - 20,
+        height: height - 20,
+        borderTopLeftRadius: 42,
+        borderTopRightRadius: 42,
+        borderBottomLeftRadius: 26,
+        borderBottomRightRadius: 12,
+        justifyContent: 'flex-end',
+      }}
+    >
+      <View
+        style={{
+          height: '42%',
+          backgroundColor: 'rgba(255,255,255,0.12)',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+      />
+    </SnapArtwork>
+  );
+}
+
+function TallVisual({ width, height, colors, snap }: { width: number; height: number; colors: [string, string]; snap: Snap | null }) {
+  return (
+    <SnapArtwork
+      snap={snap}
+      fallbackColors={colors}
+      style={{
+        width: width - 20,
+        height: height - 20,
+        borderRadius: 30,
+        justifyContent: 'space-between',
+        padding: 12,
+      }}
+    >
+      <View
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          backgroundColor: 'rgba(255,255,255,0.18)',
+        }}
+      />
+      <View
+        style={{
+          height: 26,
+          borderRadius: 999,
+          backgroundColor: 'rgba(255,255,255,0.18)',
+        }}
+      />
+    </SnapArtwork>
+  );
+}
+
+function PrimaryVisual({ size, colors, snap }: { size: number; colors: [string, string]; snap: Snap | null }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        padding: 16,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 54,
+        shadowColor: theme.colors.shadow,
+        shadowOpacity: 0.08,
+        shadowRadius: 22,
+        shadowOffset: { width: 0, height: 12 },
+      }}
+    >
+      <SnapArtwork
+        snap={snap}
+        fallbackColors={colors}
+        style={{
+          flex: 1,
+          borderRadius: 42,
+          justifyContent: 'space-between',
+          padding: 18,
+        }}
+      >
+        <View style={{ alignItems: 'flex-end' }}>
+          <View
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: 'rgba(255,255,255,0.18)',
+            }}
+          />
+        </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
+            <View
+              style={{
+                width: 14,
+                height: 48,
+                borderRadius: 8,
+                backgroundColor: 'rgba(255,255,255,0.2)',
+              }}
+            />
+            <View
+              style={{
+                width: 72,
+                height: 36,
+                borderRadius: 16,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+              }}
+            />
+          </View>
+          <View
+            style={{
+              width: 26,
+              height: 56,
+              borderRadius: 14,
+              backgroundColor: 'rgba(223, 240, 196, 0.65)',
+            }}
+          />
+        </View>
+      </SnapArtwork>
+    </View>
+  );
+}
+
+function ShelfLabel({ name, primary }: { name: string; primary: boolean }) {
+  return (
+    <View
+      style={{
+        marginTop: primary ? -18 : -10,
+        backgroundColor: primary ? theme.colors.primary : theme.colors.surface,
+        borderRadius: theme.radii.pill,
+        paddingHorizontal: primary ? 18 : 12,
+        paddingVertical: primary ? 10 : 7,
+        borderWidth: primary ? 0 : 1,
+        borderColor: primary ? 'transparent' : theme.colors.borderSoft,
+        shadowColor: primary ? theme.colors.primaryDeep : theme.colors.shadow,
+        shadowOpacity: primary ? 0.16 : 0,
+        shadowRadius: primary ? 14 : 0,
+        shadowOffset: { width: 0, height: 10 },
+        alignSelf: 'center',
+        maxWidth: primary ? 190 : 180,
+      }}
+    >
+      <Text
+        numberOfLines={1}
+        style={[
+          textStyles.button,
+          {
+            color: primary ? theme.colors.surface : theme.colors.text,
+            textTransform: 'uppercase',
+          },
+        ]}
+      >
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+function ViewModeToggle({ viewMode, onChange }: { viewMode: BoardViewMode; onChange: (mode: BoardViewMode) => void }) {
+  const options: Array<{ mode: BoardViewMode; icon: keyof typeof Feather.glyphMap; label: string }> = [
+    { mode: 'grid', icon: 'grid', label: 'Grid' },
+    { mode: 'list', icon: 'list', label: 'List' },
+  ];
+
+  return (
+    <View
+      style={{
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        gap: 4,
+        marginBottom: theme.spacing.lg,
+        padding: 4,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.radii.pill,
+        ...theme.shadows.card,
+      }}
+    >
+      {options.map((option) => {
+        const isActive = option.mode === viewMode;
+
+        return (
+          <Pressable
+            key={option.mode}
+            onPress={() => onChange(option.mode)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: theme.radii.pill,
+              backgroundColor: isActive ? theme.colors.primary : 'transparent',
+            }}
+          >
+            <Feather name={option.icon} size={16} color={isActive ? theme.colors.surface : theme.colors.primary} />
+            <Text
+              style={[
+                textStyles.button,
+                {
+                  color: isActive ? theme.colors.surface : theme.colors.text,
+                },
+              ]}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ShelfListItem({
+  shelf,
+  coverSnap,
+  snapCount,
+  anchorShelfName,
+  onPress,
+}: {
+  shelf: ReturnType<typeof getResolvedShelf>;
+  coverSnap: Snap | null;
+  snapCount: number;
+  anchorShelfName: string | null;
+  onPress: () => void;
+}) {
+  const colors = getShelfPalette(shelf.name);
+
+  return (
+    <Pressable onPress={onPress}>
+      <SurfaceCard style={{ padding: theme.spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <SnapArtwork
+            snap={coverSnap}
+            fallbackColors={colors}
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 24,
+              padding: 12,
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ alignItems: 'flex-end' }}>
+              <View
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                }}
+              />
+            </View>
+            <View
+              style={{
+                width: 42,
+                height: 12,
+                borderRadius: 999,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+              }}
+            />
+          </SnapArtwork>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: 4 }]}>Shelf</Text>
+            <Text style={[textStyles.titleLg, { marginBottom: 4 }]} numberOfLines={1}>
+              {shelf.name}
+            </Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: anchorShelfName ? theme.spacing.sm : 0 }]}>
+              {snapCount} Snap{snapCount === 1 ? '' : 's'}
+            </Text>
+
+            {anchorShelfName ? (
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: theme.radii.pill,
+                  backgroundColor: theme.colors.surfaceSoft,
+                }}
+              >
+                <Feather name="corner-up-left" size={13} color={theme.colors.primaryDeep} />
+                <Text style={[textStyles.bodySm, { color: theme.colors.accentDeep }]}>Linked to {anchorShelfName}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <Feather name="chevron-right" size={18} color={theme.colors.primary} />
+        </View>
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
+function SnapSearchResult({
+  snap,
+  shelfName,
+  onPress,
+}: {
+  snap: Snap;
+  shelfName: string;
+  onPress: () => void;
+}) {
+  const colors = getSnapPalette(snap);
+
+  return (
+    <Pressable onPress={onPress}>
+      <SurfaceCard style={{ padding: theme.spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <SnapArtwork
+            snap={snap}
+            fallbackColors={colors}
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 24,
+              padding: 12,
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ alignItems: 'flex-end' }}>
+              <View
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                }}
+              />
+            </View>
+            <View
+              style={{
+                width: 42,
+                height: 12,
+                borderRadius: 999,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+              }}
+            />
+          </SnapArtwork>
+
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, marginBottom: 4 }}>
+              <Text style={textStyles.eyebrow}>{shelfName}</Text>
+              <Text style={textStyles.bodySm}>{formatCapturedAt(snap.capturedAt ?? snap.createdAt)}</Text>
+            </View>
+
+            <Text style={[textStyles.titleMd, { marginBottom: 4 }]} numberOfLines={2}>
+              {getSnapHeadline(snap)}
+            </Text>
+
+            {snap.thought ? (
+              <Text style={[textStyles.bodySm, { marginBottom: snap.labels.length > 0 ? theme.spacing.sm : 0 }]} numberOfLines={2}>
+                {snap.thought}
+              </Text>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <SectionLabel label={getSnapSourceLabel(snap.source)} />
+              {snap.labels.slice(0, 2).map((label) => (
+                <SectionLabel key={label} label={label} />
+              ))}
+            </View>
+          </View>
+
+          <Feather name="chevron-right" size={18} color={theme.colors.primary} />
+        </View>
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
+function DraggableShelfNode({
+  shelf,
+  scale,
+  coverSnap,
+  onPress,
+  onDrag,
+  onDragEnd,
+}: {
+  shelf: ReturnType<typeof getResolvedShelf>;
+  scale: number;
+  coverSnap: Snap | null;
+  onPress: () => void;
+  onDrag: (x: number, y: number) => void;
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  const startRef = useRef({ x: shelf.boardX, y: shelf.boardY });
+  const movedRef = useRef(false);
+  const colors = getShelfPalette(shelf.name);
+  const dimensions = getNodeDimensions(shelf.boardVariant);
+  const isPrimary = shelf.boardVariant === 'primary';
+
+  useEffect(() => {
+    startRef.current = { x: shelf.boardX, y: shelf.boardY };
+  }, [shelf.boardX, shelf.boardY]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
+        onPanResponderGrant: () => {
+          startRef.current = { x: shelf.boardX, y: shelf.boardY };
+          movedRef.current = false;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          movedRef.current = true;
+          onDrag(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const nextX = startRef.current.x + gestureState.dx / scale;
+          const nextY = startRef.current.y + gestureState.dy / scale;
+
+          if (!movedRef.current) {
+            onPress();
+            return;
+          }
+
+          onDragEnd(nextX, nextY);
+        },
+        onPanResponderTerminate: (_, gestureState) => {
+          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+        },
+      }),
+    [onDrag, onDragEnd, onPress, scale, shelf.boardX, shelf.boardY],
+  );
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={{
+        position: 'absolute',
+        left: shelf.boardX,
+        top: shelf.boardY,
+      }}
+    >
+      <Pressable onPress={onPress} style={{ alignItems: 'center' }} hitSlop={18}>
+        {isPrimary ? <PrimaryVisual size={dimensions.width} colors={colors} snap={coverSnap} /> : null}
+
+        {!isPrimary ? (
+          <View
+            style={{
+              padding: 10,
+              backgroundColor: theme.colors.surfaceSoft,
+              shadowColor: theme.colors.shadow,
+              shadowOpacity: 0.08,
+              shadowRadius: 18,
+              shadowOffset: { width: 0, height: 10 },
+              borderRadius: shelf.boardVariant === 'arch' ? undefined : dimensions.width / 2,
+              borderTopLeftRadius: shelf.boardVariant === 'arch' ? 44 : undefined,
+              borderTopRightRadius: shelf.boardVariant === 'arch' ? 44 : undefined,
+              borderBottomLeftRadius: shelf.boardVariant === 'arch' ? 34 : undefined,
+              borderBottomRightRadius: shelf.boardVariant === 'arch' ? 18 : undefined,
+            }}
+          >
+            {shelf.boardVariant === 'arch' ? <ArchVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} /> : null}
+            {shelf.boardVariant === 'circle-large' || shelf.boardVariant === 'circle-small' || shelf.boardVariant === 'circle-medium' ? (
+              <CircleVisual size={dimensions.width} colors={colors} snap={coverSnap} />
+            ) : null}
+            {shelf.boardVariant === 'tall' ? <TallVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} /> : null}
+          </View>
+        ) : null}
+
+        <ShelfLabel name={shelf.name} primary={isPrimary} />
+      </Pressable>
+    </View>
+  );
+}
+
+export default function BoardScreen() {
+  const { isConfigured, user } = useAuth();
+  const router = useRouter();
+  const [viewMode, setViewMode] = useState<BoardViewMode>('grid');
+  const [hasLoadedViewModePreference, setHasLoadedViewModePreference] = useState(false);
+  const [allSnaps, setAllSnaps] = useState<Snap[]>([]);
+  const [isSnapCapReached, setIsSnapCapReached] = useState(false);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [threads, setThreads] = useState<ShelfThread[]>([]);
+  const [isLoadingShelves, setIsLoadingShelves] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<Point>({ x: 0, y: 0 });
+  const [boardTransform, setBoardTransform] = useState<BoardTransform>({ x: 0, y: 0, scale: 1 });
+  const [shouldCenterOnOpen, setShouldCenterOnOpen] = useState(true);
+  const [isCreateShelfVisible, setIsCreateShelfVisible] = useState(false);
+  const [isCreatingShelf, setIsCreatingShelf] = useState(false);
+  const [createShelfError, setCreateShelfError] = useState<string | null>(null);
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const bootstrappingIds = useRef(new Set<string>());
+  const transformRef = useRef(boardTransform);
+  const pinchGestureRef = useRef<
+    | {
+        startTransform: BoardTransform;
+        startDistance: number;
+        focalCanvas: Point;
+      }
+    | null
+  >(null);
+
+  useEffect(() => {
+    transformRef.current = boardTransform;
+  }, [boardTransform]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setShouldCenterOnOpen(true);
+    }, []),
+  );
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadViewModePreference() {
+      if (!user?.id) {
+        if (isActive) {
+          setViewMode('grid');
+          setHasLoadedViewModePreference(true);
+        }
+        return;
+      }
+
+      setHasLoadedViewModePreference(false);
+
+      try {
+        const storedViewMode = await AsyncStorage.getItem(getBoardViewModeStorageKey(user.id));
+
+        if (!isActive) {
+          return;
+        }
+
+        setViewMode(isBoardViewMode(storedViewMode) ? storedViewMode : 'grid');
+      } catch {
+        if (isActive) {
+          setViewMode('grid');
+        }
+      } finally {
+        if (isActive) {
+          setHasLoadedViewModePreference(true);
+        }
+      }
+    }
+
+    loadViewModePreference();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !hasLoadedViewModePreference) {
+      return;
+    }
+
+    AsyncStorage.setItem(getBoardViewModeStorageKey(user.id), viewMode).catch(() => {
+      // Preference persistence should not interrupt the board experience.
+    });
+  }, [hasLoadedViewModePreference, user?.id, viewMode]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setShelves([]);
+      setIsLoadingShelves(false);
+      return;
+    }
+
+    setIsLoadingShelves(true);
+    const unsubscribe = subscribeToShelves(
+      user.id,
+      (nextShelves) => {
+        setShelves(nextShelves);
+        setError(null);
+        setIsLoadingShelves(false);
+      },
+      (nextError) => {
+        setError(nextError.message);
+        setIsLoadingShelves(false);
+      },
+    );
+
+    return unsubscribe;
+  }, [user?.id]);
+
+  const resolvedShelves = useMemo(() => shelves.map((shelf, index) => getResolvedShelf(shelf, index)), [shelves]);
+  const contentBounds = useMemo(() => getContentBounds(resolvedShelves), [resolvedShelves]);
+  const fitScale = useMemo(() => getFitScale(contentBounds, viewport), [contentBounds, viewport]);
+  const shelvesById = useMemo(() => new Map(resolvedShelves.map((shelf) => [shelf.id, shelf])), [resolvedShelves]);
+  const shelfCoverSnaps = useMemo(
+    () =>
+      new Map(
+        resolvedShelves.map((shelf) => {
+          const coverSnap = getShelfCoverSnap(shelf, allSnaps);
+          return [shelf.id, coverSnap ?? null] as const;
+        }),
+      ),
+    [allSnaps, resolvedShelves],
+  );
+  const snapCountsByShelfId = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    allSnaps.forEach((snap) => {
+      if (!snap.shelfId) {
+        return;
+      }
+
+      counts.set(snap.shelfId, (counts.get(snap.shelfId) ?? 0) + 1);
+    });
+
+    return counts;
+  }, [allSnaps]);
+  const renderableThreads = useMemo(
+    () => threads.filter((thread) => shelvesById.has(thread.fromShelfId) && shelvesById.has(thread.toShelfId)),
+    [shelvesById, threads],
+  );
+  const anchorShelfNamesByShelfId = useMemo(
+    () =>
+      new Map(
+        renderableThreads.flatMap((thread) => {
+          const anchorShelf = shelvesById.get(thread.fromShelfId);
+
+          return anchorShelf ? [[thread.toShelfId, anchorShelf.name] as const] : [];
+        }),
+      ),
+    [renderableThreads, shelvesById],
+  );
+  const shelfNamesById = useMemo(() => new Map(shelves.map((shelf) => [shelf.id, shelf.name])), [shelves]);
+  const trimmedSearchQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
+  const matchingSnaps = useMemo(
+    () => searchSnaps(allSnaps, trimmedSearchQuery, (snap) => (snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : null)),
+    [allSnaps, shelfNamesById, trimmedSearchQuery],
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    shelves.forEach((shelf, index) => {
+      if (shelf.boardX !== null && shelf.boardY !== null && shelf.boardVariant !== null) {
+        return;
+      }
+
+      if (bootstrappingIds.current.has(shelf.id)) {
+        return;
+      }
+
+      bootstrappingIds.current.add(shelf.id);
+      bootstrapShelfPlacement(user.id, shelf.id, index).finally(() => {
+        bootstrappingIds.current.delete(shelf.id);
+      });
+    });
+  }, [shelves, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setThreads([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToThreads(
+      user.id,
+      (nextThreads) => {
+        setThreads(nextThreads);
+      },
+      (nextError) => {
+        setError(nextError.message);
+      },
+    );
+
+    return unsubscribe;
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setAllSnaps([]);
+      setIsSnapCapReached(false);
+      return;
+    }
+
+    const unsubscribe = subscribeToAllSnaps(
+      user.id,
+      (nextSnaps) => {
+        setAllSnaps(nextSnaps);
+        setIsSnapCapReached(nextSnaps.length === 200);
+      },
+      (nextError) => {
+        setError(nextError.message);
+      },
+      200,
+    );
+
+    return unsubscribe;
+  }, [user?.id]);
+
+  function applyTransform(nextTransform: BoardTransform) {
+    setBoardTransform(clampTransform(nextTransform, viewport, contentBounds));
+  }
+
+  function zoomToFit() {
+    if (viewport.x === 0 || viewport.y === 0 || resolvedShelves.length === 0) {
+      return;
+    }
+
+    const bounds = contentBounds;
+    const contentWidth = bounds.maxX - bounds.minX;
+    const targetScale = fitScale;
+
+    applyTransform({
+      scale: targetScale,
+      x: viewport.x / 2 - (bounds.minX + contentWidth / 2) * targetScale,
+      y: BOARD_TOP_GUTTER - bounds.minY * targetScale,
+    });
+  }
+
+  useEffect(() => {
+    if (!shouldCenterOnOpen || viewport.x === 0 || viewport.y === 0 || resolvedShelves.length === 0) {
+      return;
+    }
+
+    const bounds = contentBounds;
+    const contentWidth = bounds.maxX - bounds.minX;
+    const targetScale = fitScale;
+
+    applyTransform({
+      scale: targetScale,
+      x: viewport.x / 2 - (bounds.minX + contentWidth / 2) * targetScale,
+      y: BOARD_TOP_GUTTER - bounds.minY * targetScale,
+    });
+
+    setShouldCenterOnOpen(false);
+  }, [contentBounds, fitScale, resolvedShelves.length, shouldCenterOnOpen, viewport]);
+
+  const backgroundPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 3 || Math.abs(gestureState.dy) > 3,
+        onPanResponderGrant: () => {
+          transformRef.current = boardTransform;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          applyTransform({
+            ...transformRef.current,
+            x: transformRef.current.x + gestureState.dx,
+            y: transformRef.current.y + gestureState.dy,
+          });
+        },
+      }),
+    [boardTransform, viewport],
+  );
+
+  function zoomTo(nextScale: number, focalPoint?: Point) {
+    const current = transformRef.current;
+    const clampedScale = clamp(nextScale, fitScale, MAX_SCALE);
+    const targetPoint = focalPoint ?? { x: viewport.x / 2, y: viewport.y / 2 };
+    const focalCanvas = {
+      x: (targetPoint.x - current.x) / current.scale,
+      y: (targetPoint.y - current.y) / current.scale,
+    };
+
+    applyTransform({
+      scale: clampedScale,
+      x: targetPoint.x - focalCanvas.x * clampedScale,
+      y: targetPoint.y - focalCanvas.y * clampedScale,
+    });
+  }
+
+  function handlePinchStart(touches: readonly { locationX: number; locationY: number }[]) {
+    const current = transformRef.current;
+    const first = { x: touches[0].locationX, y: touches[0].locationY };
+    const second = { x: touches[1].locationX, y: touches[1].locationY };
+    const midpoint = getMidpoint(first, second);
+
+    pinchGestureRef.current = {
+      startTransform: current,
+      startDistance: getDistance(first, second),
+      focalCanvas: {
+        x: (midpoint.x - current.x) / current.scale,
+        y: (midpoint.y - current.y) / current.scale,
+      },
+    };
+  }
+
+  function handlePinchMove(touches: readonly { locationX: number; locationY: number }[]) {
+    const gesture = pinchGestureRef.current;
+    if (!gesture) {
+      return;
+    }
+
+    const first = { x: touches[0].locationX, y: touches[0].locationY };
+    const second = { x: touches[1].locationX, y: touches[1].locationY };
+    const midpoint = getMidpoint(first, second);
+    const nextScale = clamp(
+      gesture.startTransform.scale * (getDistance(first, second) / Math.max(gesture.startDistance, 1)),
+      fitScale,
+      MAX_SCALE,
+    );
+
+    applyTransform({
+      scale: nextScale,
+      x: midpoint.x - gesture.focalCanvas.x * nextScale,
+      y: midpoint.y - gesture.focalCanvas.y * nextScale,
+    });
+  }
+
+  function handleShelfDrag(shelfId: string, x: number, y: number) {
+    setShelves((current) =>
+      current.map((shelf, index) => {
+        if (shelf.id !== shelfId) {
+          return shelf;
+        }
+
+        const resolved = getResolvedShelf(shelf, index);
+        const dimensions = getNodeDimensions(resolved.boardVariant);
+
+        return {
+          ...shelf,
+          boardX: clamp(x, 0, CANVAS_WIDTH - dimensions.width),
+          boardY: clamp(y, 0, CANVAS_HEIGHT - dimensions.height - 54),
+        };
+      }),
+    );
+  }
+
+  async function handleShelfDragEnd(shelfId: string, x: number, y: number) {
+    if (!user?.id) {
+      return;
+    }
+
+    handleShelfDrag(shelfId, x, y);
+
+    const shelf = resolvedShelves.find((entry) => entry.id === shelfId);
+    const dimensions = getNodeDimensions(shelf?.boardVariant ?? 'circle-medium');
+    const nextX = clamp(x, 0, CANVAS_WIDTH - dimensions.width);
+    const nextY = clamp(y, 0, CANVAS_HEIGHT - dimensions.height - 54);
+
+    try {
+      await updateShelfPosition(user.id, shelfId, nextX, nextY);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to save the Shelf position.');
+    }
+  }
+
+  async function handleCreateShelf(input: { name: string; anchorShelfId: string | null }) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setIsCreatingShelf(true);
+      setCreateShelfError(null);
+      const createdShelf = await createShelf(user.id, {
+        name: input.name,
+        ...getDefaultShelfPlacement(shelves.length),
+      });
+
+      if (input.anchorShelfId) {
+        await createShelfThread(user.id, {
+          fromShelfId: input.anchorShelfId,
+          toShelfId: createdShelf.id,
+        });
+      }
+
+      setIsCreateShelfVisible(false);
+      setShouldCenterOnOpen(true);
+    } catch (nextError) {
+      setCreateShelfError(nextError instanceof Error ? nextError.message : 'Unable to create a Shelf right now.');
+    } finally {
+      setIsCreatingShelf(false);
+    }
+  }
+
+  function handleToggleSearch() {
+    if (isSearchVisible) {
+      setIsSearchVisible(false);
+      setSearchQuery('');
+      return;
+    }
+
+    setIsSearchVisible(true);
+  }
+
+  return (
+    <Screen style={{ paddingBottom: 118 }}>
+      <AppHeader onPressSearch={handleToggleSearch} searchIconName={isSearchVisible ? 'x' : 'search'} />
+
+      {isSearchVisible ? (
+        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              backgroundColor: theme.colors.background,
+              borderRadius: theme.radii.pill,
+              borderWidth: 1,
+              borderColor: theme.colors.borderSoft,
+              paddingHorizontal: 16,
+            }}
+          >
+            <Feather name="search" size={18} color={theme.colors.textMuted} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search titles, thoughts, or labels"
+              placeholderTextColor={theme.colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              style={{
+                flex: 1,
+                minHeight: 52,
+                color: theme.colors.text,
+                fontFamily: theme.typography.fonts.medium,
+                fontSize: 15,
+              }}
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
+                <Feather name="x-circle" size={18} color={theme.colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Search across every Snap on your Board by title, thought, or label.</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {!isConfigured ? (
+        <EmptyState
+          title="Restart Expo to activate Firebase"
+          description="The Board will switch to live Shelves after Expo reloads with your Firebase config values."
+        />
+      ) : null}
+
+      {isLoadingShelves ? (
+        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+          <Text style={textStyles.bodyMd}>Loading your live Shelves...</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {error ? (
+        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Board Error</Text>
+          <Text style={textStyles.bodyMd}>{error}</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {isSnapCapReached ? (
+        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md }}>
+          <Text style={textStyles.bodySm}>Showing your 200 most recent Snaps. Open a Shelf to see all.</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {!trimmedSearchQuery && !isLoadingShelves && shelves.length === 0 ? (
+        <EmptyState
+          title="Your Board is waiting for its first Shelf"
+          description={__DEV__ ? 'Use the dev-only sample data action in Settings to create a few live Shelves and Snaps.' : 'New Shelves will appear here once you start organizing Snaps.'}
+        />
+      ) : null}
+
+      {trimmedSearchQuery ? (
+        <View style={{ flex: 1 }}>
+          <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Snap Search</Text>
+            <Text style={[textStyles.titleMd, { marginBottom: 4 }]}>{`"${trimmedSearchQuery}"`}</Text>
+            <Text style={textStyles.bodyMd}>
+              {matchingSnaps.length} result{matchingSnaps.length === 1 ? '' : 's'} across all Snaps
+            </Text>
+          </SurfaceCard>
+
+          {matchingSnaps.length === 0 ? (
+            <EmptyState title="No matching Snaps" description="Try a title word, a phrase from your thought, or one of your labels." />
+          ) : (
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 124, gap: theme.spacing.md }}>
+              {matchingSnaps.map((snap) => (
+                <SnapSearchResult
+                  key={snap.id}
+                  snap={snap}
+                  shelfName={snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? 'Shelf' : 'Drop'}
+                  onPress={() => {
+                    if (snap.shelfId) {
+                      router.push(`/shelf/${snap.shelfId}`);
+                      return;
+                    }
+
+                    router.push('/drop');
+                  }}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      ) : null}
+
+      {!trimmedSearchQuery && resolvedShelves.length > 0 ? (
+        <View style={{ flex: 1 }}>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+
+          {viewMode === 'grid' ? (
+            <View
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setViewport({ x: width, y: height });
+              }}
+              style={{ flex: 1, overflow: 'hidden' }}
+              onStartShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
+              onMoveShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
+              onResponderGrant={(event) => {
+                if (event.nativeEvent.touches.length >= 2) {
+                  handlePinchStart(event.nativeEvent.touches);
+                }
+              }}
+              onResponderMove={(event) => {
+                if (event.nativeEvent.touches.length >= 2) {
+                  handlePinchMove(event.nativeEvent.touches);
+                }
+              }}
+              onResponderRelease={() => {
+                pinchGestureRef.current = null;
+              }}
+              onResponderTerminate={() => {
+                pinchGestureRef.current = null;
+              }}
+            >
+              <View
+                {...backgroundPanResponder.panHandlers}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                }}
+              />
+
+              <View
+                pointerEvents="box-none"
+                style={{
+                  position: 'absolute',
+                  left: boardTransform.x,
+                  top: boardTransform.y,
+                  width: CANVAS_WIDTH,
+                  height: CANVAS_HEIGHT,
+                }}
+              >
+                <View
+                  pointerEvents="box-none"
+                  style={{
+                    position: 'absolute',
+                    left: (CANVAS_WIDTH * (boardTransform.scale - 1)) / 2,
+                    top: (CANVAS_HEIGHT * (boardTransform.scale - 1)) / 2,
+                    width: CANVAS_WIDTH,
+                    height: CANVAS_HEIGHT,
+                    transform: [{ scale: boardTransform.scale }],
+                  }}
+                >
+                  <DottedCanvas />
+
+                  {renderableThreads.map((thread) => {
+                    const fromShelf = shelvesById.get(thread.fromShelfId);
+                    const toShelf = shelvesById.get(thread.toShelfId);
+
+                    if (!fromShelf || !toShelf) {
+                      return null;
+                    }
+
+                    return renderThread(getNodeCenter(fromShelf), getNodeCenter(toShelf), `thread-${thread.id}`);
+                  })}
+
+                  {resolvedShelves.map((shelf) => (
+                    <DraggableShelfNode
+                      key={shelf.id}
+                      shelf={shelf}
+                      scale={boardTransform.scale}
+                      coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                      onPress={() => router.push(`/shelf/${shelf.id}`)}
+                      onDrag={(x, y) => {
+                        handleShelfDrag(shelf.id, x, y);
+                      }}
+                      onDragEnd={(x, y) => {
+                        handleShelfDragEnd(shelf.id, x, y);
+                      }}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View
+                style={{
+                  position: 'absolute',
+                  right: 4,
+                  top: 280,
+                  width: 74,
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: 38,
+                  paddingVertical: 20,
+                  alignItems: 'center',
+                  gap: 22,
+                  shadowColor: theme.colors.shadow,
+                  shadowOpacity: 0.08,
+                  shadowRadius: 18,
+                  shadowOffset: { width: 0, height: 10 },
+                }}
+              >
+                <Pressable onPress={() => zoomTo(boardTransform.scale + 0.12)} hitSlop={10}>
+                  <Feather name="plus" size={28} color={theme.colors.primary} />
+                </Pressable>
+                <View style={{ width: 28, height: 1, backgroundColor: theme.colors.borderSoft }} />
+                <Pressable
+                  onPress={() => {
+                    if (boardTransform.scale - 0.12 <= fitScale + 0.01) {
+                      zoomToFit();
+                      return;
+                    }
+
+                    zoomTo(boardTransform.scale - 0.12);
+                  }}
+                  hitSlop={10}
+                >
+                  <Feather name="minus" size={28} color={theme.colors.primary} />
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 124 }}
+            >
+              {resolvedShelves.map((shelf, index) => (
+                <View key={shelf.id} style={{ marginBottom: index === resolvedShelves.length - 1 ? 0 : theme.spacing.md }}>
+                  <ShelfListItem
+                    shelf={shelf}
+                    coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                    snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
+                    anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
+                    onPress={() => router.push(`/shelf/${shelf.id}`)}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          <Pressable
+            onPress={() => setIsCreateShelfVisible(true)}
+            style={{
+              position: 'absolute',
+              right: 0,
+              bottom: 20,
+              width: 78,
+              height: 78,
+              borderRadius: 39,
+              backgroundColor: theme.colors.primary,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...theme.shadows.button,
+            }}
+          >
+            <Feather name="plus" size={28} color={theme.colors.surface} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      <CreateShelfModal
+        visible={isCreateShelfVisible}
+        shelves={resolvedShelves}
+        isSubmitting={isCreatingShelf}
+        error={createShelfError}
+        onClose={() => {
+          setIsCreateShelfVisible(false);
+          setCreateShelfError(null);
+        }}
+        onSubmit={handleCreateShelf}
+      />
+    </Screen>
+  );
+}
