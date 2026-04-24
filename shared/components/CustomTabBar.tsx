@@ -12,6 +12,10 @@ function renderIcon(routeName: string, color: string, focused: boolean) {
     return <BoardIcon color={color} focused={focused} />;
   }
 
+  if (routeName === 'library') {
+    return <Feather name="book-open" size={24} color={color} />;
+  }
+
   if (routeName === 'drop') {
     return <DropIcon color={color} focused={focused} />;
   }

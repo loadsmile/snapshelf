@@ -9,6 +9,10 @@ export type Snap = {
   thought: string | null;
   labels: string[];
   source: SnapSource;
+  isFavorite: boolean;
+  favoritedAt: Date | null;
+  isArchived: boolean;
+  archivedAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
   capturedAt: Date | null;
@@ -22,5 +26,9 @@ export type CreateSnapInput = {
   thought?: string | null;
   labels?: string[];
   source?: SnapSource;
+  isFavorite?: boolean;
+  favoritedAt?: Date | null;
+  isArchived?: boolean;
+  archivedAt?: Date | null;
   capturedAt?: Date | null;
 };

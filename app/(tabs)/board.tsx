@@ -1269,7 +1269,7 @@ export default function BoardScreen() {
 
       {isSnapCapReached ? (
         <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md }}>
-          <Text style={textStyles.bodySm}>Showing your 200 most recent Snaps. Open a Shelf to see all.</Text>
+          <Text style={textStyles.bodySm}>Showing your 200 most recent Snaps here. Open Library for full-account search and filters.</Text>
         </SurfaceCard>
       ) : null}
 

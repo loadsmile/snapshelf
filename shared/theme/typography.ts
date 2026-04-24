@@ -58,8 +58,9 @@ export const textStyles = StyleSheet.create({
     color: colors.primary,
   },
   button: {
-    fontFamily: fonts.semibold,
+    fontFamily: fonts.medium,
     fontSize: 15,
     lineHeight: 18,
+    color: colors.text,
   },
 });

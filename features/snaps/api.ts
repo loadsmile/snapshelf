@@ -121,6 +121,10 @@ export function mapSnap(id: string, data: Record<string, unknown>): Snap {
       data.source === 'manual'
         ? data.source
         : 'unknown',
+    isFavorite: data.isFavorite === true,
+    favoritedAt: toDate(data.favoritedAt),
+    isArchived: data.isArchived === true,
+    archivedAt: toDate(data.archivedAt),
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt),
     capturedAt: toDate(data.capturedAt),
@@ -173,6 +177,10 @@ export async function createSnap(userId: string, input: CreateSnapInput): Promis
     thought: input.thought ?? null,
     labels: input.labels ?? [],
     source: input.source ?? 'unknown',
+    isFavorite: input.isFavorite ?? false,
+    favoritedAt: input.favoritedAt ? Timestamp.fromDate(input.favoritedAt) : null,
+    isArchived: input.isArchived ?? false,
+    archivedAt: input.archivedAt ? Timestamp.fromDate(input.archivedAt) : null,
     capturedAt: input.capturedAt ? Timestamp.fromDate(input.capturedAt) : serverTimestamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -281,6 +289,26 @@ export async function moveSnapToShelf(userId: string, snapId: string, shelfId: s
   if (shelfId) {
     await touchShelf(userId, shelfId, snapId);
   }
+}
+
+export async function setSnapFavorite(userId: string, snapId: string, isFavorite: boolean): Promise<void> {
+  const db = requireDb();
+
+  await updateDoc(doc(db, 'users', userId, 'snaps', snapId), {
+    isFavorite,
+    favoritedAt: isFavorite ? serverTimestamp() : null,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function setSnapArchived(userId: string, snapId: string, isArchived: boolean): Promise<void> {
+  const db = requireDb();
+
+  await updateDoc(doc(db, 'users', userId, 'snaps', snapId), {
+    isArchived,
+    archivedAt: isArchived ? serverTimestamp() : null,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function deleteSnap(userId: string, snapId: string, localPath: string | null, shelfId?: string | null): Promise<void> {

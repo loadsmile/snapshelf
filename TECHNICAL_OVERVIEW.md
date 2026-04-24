@@ -10,6 +10,11 @@
 ### Sign-In (`features/auth/api.ts:63-65`)
 - `signInWithEmailAndPassword` - Email/password only
 
+### Self-Serve Account Actions (`features/auth/api.ts`)
+- `updateUserDisplayName(displayName)` updates both Firebase Auth and `users/{userId}`
+- `sendPasswordReset()` sends a reset email to the current signed-in email address
+- `deleteCurrentUserAccount(password)` reauthenticates, deletes Firestore user data, removes local Snap image files, then deletes the Firebase Auth user
+
 ### Auth State Management (`features/auth/AuthProvider.tsx:14-42`)
 - `onAuthStateChanged` subscription with three states: `'loading' | 'signedOut' | 'signedIn'`
 - On user detected: maps to `AuthUser`, calls `ensureUserProfile()`, sets signedIn
@@ -105,6 +110,13 @@ const [boardTransform, setBoardTransform] = useState<BoardTransform>({ x: 0, y: 
 - Center: `(shelfX + width/2, shelfY + height/2)`
 - CSS `transform: rotate()` positions line along angle
 
+### Board Search
+- Search UI lives in `app/(tabs)/board.tsx`
+- `searchShelves()` performs in-memory shelf-name matching
+- `searchSnaps()` matches title, thought, labels, and optional shelf-name text
+- Search results are split into Shelf matches and Snap matches
+- Snap search still only sees the Board's subscribed Snap set, which is capped at the 200 most recent items
+
 ---
 
 ## 4. Shelf Management
@@ -167,6 +179,18 @@ createSnap(userId, {
 - Drop and Shelf views use cursor-based pagination (`listDropSnaps`, `listShelfSnaps`)
 - `usePaginatedSnaps()` keeps the first page live via `onSnapshot()` and appends older pages on demand
 
+### Library Search & Filtering (`features/snaps/library.ts:5-127`, `app/(tabs)/library.tsx`)
+- `Library` subscribes to the full account-level Snap collection via `subscribeToAllSnaps()` and filters locally
+- `filterLibrarySnaps()` composes text search, shelf, source, label, date range, status, favorites-only, and sort into one in-memory pass
+- `searchSnaps()` still powers the text matching layer, while `getSnapSourceLabel()` and shelf-name context expand what search can see
+- `sortLibrarySnaps()` supports `newest`, `oldest`, `updated`, and `favorites`
+- The main screen keeps search plus compact primary controls visible at rest:
+  - `Filters`
+  - `Sort`
+  - `Favorites`
+- Advanced filters now live in `LibraryFilterSheet`, a dedicated bottom-anchored `Modal` with sections for `Status`, `Shelf`, `Source`, `Label`, and `Date`
+- Applied filters render as removable chips on the main screen; non-default `status` and `sort` also surface there so hidden sheet state stays visible
+
 ### Labels
 - Stored as string array in Firestore
 - Parsed from comma-separated input in `shared/components/CreateSnapModal.tsx:27-32`
@@ -224,7 +248,7 @@ createSnap(userId, {
 | Component | Purpose |
 |---|---|
 | `CustomTabBar` | Floating pill-style tab bar, 10px above bottom safe area |
-| `AppHeader` | Logo + menu icon left, search icon right |
+| `AppHeader` | Brand wordmark left, optional search/action icon right |
 
 ### Form
 | Component | Purpose |
@@ -240,6 +264,7 @@ createSnap(userId, {
 | `ShelfPickerModal` | List shelves for snap placement |
 | `EditThreadModal` | Thread creation/exclusion of current shelf |
 | `ActionSheetModal` | Reusable bottom-sheet style action list for Snap and Shelf actions |
+| `LibraryFilterSheet` | Dedicated multi-section Library filter sheet with reset and result-count CTA |
 
 ### Display
 | Component | Purpose |
@@ -289,7 +314,9 @@ Font: **Manrope** (Google Fonts) — weights 400, 500, 600, 700
 | `titleMd` | semibold 17px |
 | `bodyMd` | regular 15px, muted |
 | `eyebrow` | semibold 11px uppercase, 0.8 letter spacing |
-| `button` | semibold 15px |
+| `button` | medium 15px |
+
+- Interactive controls were normalized around the medium-weight `Manrope` button style during the latest Library polish pass so pills, action rows, and shared buttons read consistently across screens while page titles remain stronger.
 
 ### Theme Exports (`shared/theme/index.ts:1-17`, `shared/theme/typography.ts:12-65`)
 - `theme` bundles `colors`, `spacing`, `radii`, `shadows`, and `typography.fonts`
@@ -313,8 +340,9 @@ app/
 ├── (tabs)/
 │   ├── _layout.tsx          # Tabs: CustomTabBar, no headers
 │   ├── board.tsx            # Tab 1: Shelf canvas
-│   ├── drop.tsx             # Tab 2: Unsorted snaps
-│   └── settings.tsx         # Tab 3: Settings
+│   ├── library.tsx          # Tab 2: Full-account snap search and filtering
+│   ├── drop.tsx             # Tab 3: Unsorted snaps
+│   └── settings.tsx         # Tab 4: Settings
 └── shelf/
     └── [id].tsx             # Shelf detail view (outside tabs)
 ```
@@ -333,6 +361,9 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 | `signUp` | `Promise<void>` | Creates auth + profile + default shelf |
 | `signIn` | `Promise<void>` | Firebase sign-in |
 | `signOutUser` | `Promise<void>` | Firebase sign-out |
+| `updateUserDisplayName` | `Promise<void>` | Syncs display name to Auth + Firestore |
+| `sendPasswordReset` | `Promise<void>` | Sends reset email to current user |
+| `deleteCurrentUserAccount` | `Promise<void>` | Reauthenticates, deletes user data, then deletes auth user |
 | `subscribeToAuth` | unsubscribe | `onAuthStateChanged` wrapper |
 | `getAuthErrorMessage` | `string` | Maps FirebaseError codes |
 
@@ -378,7 +409,11 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 | Export | Returns | Notes |
 |---|---|---|
 | `resolveSnapImageUri` | `string \| null` | Resolves `localPath` against `documentDirectory`, falling back to `imageUrl` |
+| `deleteSnapImageLocally` | `Promise<void>` | Removes a local cached Snap image when a path exists |
 | `searchSnaps` | `Snap[]` | In-memory search across title, thought, labels, and optional additional text |
+| `filterLibrarySnaps` | `Snap[]` | Applies Library search, filter, and sort state to the full Snap set |
+| `sortLibrarySnaps` | `Snap[]` | Applies the selected Library ordering strategy |
+| `collectSnapLabels` | `string[]` | Derives sorted unique label options from the current Snap set |
 | `getSnapSourceLabel` | `string` | User-facing label for a Snap source |
 | `getSnapHeadline` | `string` | Preferred title/fallback text for Snap cards |
 | `formatCapturedAt` | `string` | Relative date display for Snap timestamps |
@@ -386,6 +421,11 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 | `getSnapPalette` | `[string, string]` | Palette derived from Snap content |
 | `getShelfPalette` | `[string, string]` | Palette derived from Shelf name |
 | `getShelfCoverSnap` | `Snap \| null` | Chooses explicit or fallback cover art for a Shelf |
+
+### Shelf Helper Exports
+| Export | Returns | Notes |
+|---|---|---|
+| `searchShelves` | `Shelf[]` | In-memory search across Shelf names |
 
 ### Threads API
 | Function | Returns | Notes |
@@ -427,7 +467,7 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 ### Firestore
 ```
 users/{userId}
-  ├── email, createdAt, updatedAt
+  ├── email, displayName, createdAt, updatedAt
   │
   ├── shelves/{shelfId}
   │   ├── name, coverSnapId
@@ -468,8 +508,12 @@ match /users/{userId}/{allPaths=**} {
 ```typescript
 AuthStatus = 'loading' | 'signedOut' | 'signedIn'
 AuthUser = { id, email, displayName }
-UserProfile = { id, email, createdAt, updatedAt }
-AuthContextValue = { status, user, profile, isConfigured, configError, signIn, signUp, signOut }
+UserProfile = { id, email, displayName, createdAt, updatedAt }
+AuthContextValue = {
+  status, user, profile, isConfigured, configError,
+  signIn, signUp, signOut,
+  updateDisplayName, sendPasswordReset, deleteAccount,
+}
 ```
 
 ### Shelves (`features/shelves/types.ts:1-20`)
@@ -563,14 +607,12 @@ Path alias: `@/` → project root
 - **No batch operations** — Creating multiple items requires sequential calls
 - **No input validation** — Minimal validation on API inputs before Firestore writes
 - **No analytics** — No event tracking or user behavior data
-- **No testing** — No test suite present
+- **Limited automated coverage** — Vitest covers search/pagination helpers, but there are no UI, integration, or device-level tests yet
 - **No dark mode** — Theme is light-only
 - **Single auth method** — Email/password only, no OAuth/social login
-- **No user settings** — No profile editing, password reset, account deletion
 - **Image sync is local-first** — Snaps currently persist `localPath` on-device; media is not yet uploaded for cross-device sync
 - **Board search is capped** — Board-wide search only sees the 200 most recent Snaps because the board subscription is intentionally limited
 - **Threads are one-way** — `fromShelfId` → `toShelfId` with no bidirectional support
-- **No shelf search** — Can't search shelves by name
 - **Thread anchors are fragile** — `setShelfAnchor` deletes all existing threads for a shelf
 
 ---
@@ -578,23 +620,19 @@ Path alias: `@/` → project root
 ## 15. Potential Improvements
 
 ### High Priority
-- [ ] Decide whether Snap media should stay local-first or move to Firebase Storage sync
 - [ ] Add input validation layer
-- [ ] Add test and lint scripts plus a minimal automated test suite
+- [ ] Add a lint script and broaden automated coverage beyond helper-level tests
 - [ ] Run a device QA pass for auth, share intent, Board drag/zoom, and delete flows
 
 ### Medium Priority
 - [ ] Add offline mode with Firestore persistence
 - [ ] Extend search beyond the Board's 200-snap live cap
-- [ ] Add shelf search functionality
 - [ ] Add dark mode theme
 - [ ] Add analytics/event tracking
 
 ### Lower Priority
 - [ ] Add OAuth providers (Google, Apple)
-- [ ] Add user profile settings
-- [ ] Add password reset flow
-- [ ] Add account deletion
+- [ ] Add richer user profile settings beyond display name and account actions
 - [ ] Add export/import data feature
 - [ ] Add collaborative shelves (sharing with other users)
 - [ ] Add smart thread suggestions based on labels/content

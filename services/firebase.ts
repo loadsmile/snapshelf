@@ -3,7 +3,7 @@ import { getApp, getApps, initializeApp } from 'firebase/app';
 import type { Auth, Persistence } from 'firebase/auth';
 import * as FirebaseAuth from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
-import { getFirestore } from 'firebase/firestore';
+import { CACHE_SIZE_UNLIMITED, getFirestore, initializeFirestore, persistentLocalCache } from 'firebase/firestore';
 import { Platform } from 'react-native';
 
 import { firebaseConfigError, firebaseEnv, isFirebaseConfigured, missingFirebaseEnv } from '@/shared/config/env';
@@ -41,7 +41,28 @@ function createAuthInstance(): Auth | null {
 }
 
 export const auth = createAuthInstance();
-export const db: Firestore | null = app ? getFirestore(app) : null;
+
+function createDbInstance(): Firestore | null {
+  if (!app) {
+    return null;
+  }
+
+  if (Platform.OS !== 'web') {
+    return getFirestore(app);
+  }
+
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+      }),
+    });
+  } catch {
+    return getFirestore(app);
+  }
+}
+
+export const db: Firestore | null = createDbInstance();
 
 function requireService<T>(service: T | null): T {
   if (!service) {

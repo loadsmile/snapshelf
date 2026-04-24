@@ -20,8 +20,7 @@ export function AppHeader({ onPressSearch, searchIconName = 'search' }: AppHeade
         paddingHorizontal: 4,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-        <Feather name="menu" size={28} color={theme.colors.primary} />
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Text style={textStyles.brand}>SnapShelf</Text>
       </View>
       {onPressSearch ? (

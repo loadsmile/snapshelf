@@ -66,11 +66,11 @@ export function ActionSheetModal({ visible, title, description, actions, onClose
                       borderColor: isDestructive ? theme.colors.primary : theme.colors.borderSoft,
                       opacity: action.disabled ? 0.58 : 1,
                     }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-                      {action.icon ? <Feather name={action.icon} size={16} color={iconColor} /> : null}
-                      <Text style={[textStyles.titleMd, { color: textColor }]}>{action.label}</Text>
-                    </View>
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+                        {action.icon ? <Feather name={action.icon} size={16} color={iconColor} /> : null}
+                        <Text style={[textStyles.button, { color: textColor }]}>{action.label}</Text>
+                      </View>
 
                     {action.loading ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Feather name="chevron-right" size={18} color={textColor} />}
                   </Pressable>

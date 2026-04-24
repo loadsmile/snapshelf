@@ -10,19 +10,29 @@ type ShelfPickerModalProps = {
   visible: boolean;
   shelves: Shelf[];
   snapTitle?: string;
+  title?: string;
+  description?: string;
+  includeDropOption?: boolean;
+  dropLabel?: string;
   isSubmitting?: boolean;
   onClose: () => void;
-  onSelect: (shelf: Shelf) => void;
+  onSelect: (shelf: Shelf | null) => void;
 };
 
 export function ShelfPickerModal({
   visible,
   shelves,
   snapTitle,
+  title = 'Move to Shelf',
+  description,
+  includeDropOption = false,
+  dropLabel = 'Drop',
   isSubmitting = false,
   onClose,
   onSelect,
 }: ShelfPickerModalProps) {
+  const resolvedDescription = description ?? (snapTitle ? `Choose where to place "${snapTitle}".` : 'Choose a Shelf for this Snap.');
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable
@@ -36,12 +46,29 @@ export function ShelfPickerModal({
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
-            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Move to Shelf</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>
-              {snapTitle ? `Choose where to place “${snapTitle}”.` : 'Choose a Shelf for this Snap.'}
-            </Text>
+            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{resolvedDescription}</Text>
 
             <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+              {includeDropOption ? (
+                <Pressable
+                  onPress={() => onSelect(null)}
+                  disabled={isSubmitting}
+                  style={{
+                    backgroundColor: theme.colors.background,
+                    borderRadius: 22,
+                    paddingHorizontal: theme.spacing.md,
+                    paddingVertical: 16,
+                    marginBottom: theme.spacing.sm,
+                    borderWidth: 1,
+                    borderColor: theme.colors.borderSoft,
+                    opacity: isSubmitting ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={textStyles.button}>{dropLabel}</Text>
+                </Pressable>
+              ) : null}
+
               {shelves.map((shelf) => (
                 <Pressable
                   key={shelf.id}
@@ -58,11 +85,11 @@ export function ShelfPickerModal({
                     opacity: isSubmitting ? 0.6 : 1,
                   }}
                 >
-                  <Text style={textStyles.titleMd}>{shelf.name}</Text>
+                  <Text style={textStyles.button}>{shelf.name}</Text>
                 </Pressable>
               ))}
 
-              {shelves.length === 0 ? <Text style={textStyles.bodyMd}>Create a Shelf first to move Snaps out of the Drop.</Text> : null}
+              {shelves.length === 0 && !includeDropOption ? <Text style={textStyles.bodyMd}>Create a Shelf first to move Snaps out of the Drop.</Text> : null}
             </ScrollView>
 
             <View style={{ marginTop: theme.spacing.lg }}>

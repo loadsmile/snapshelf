@@ -114,8 +114,8 @@ export default function DropScreen() {
   const selectedTitle = useMemo(() => (selectedSnap ? getSnapHeadline(selectedSnap) : undefined), [selectedSnap]);
   const activeError = error ?? snapsError;
 
-  async function handleSelectShelf(shelf: Shelf) {
-    if (!selectedSnap || !user?.id) {
+  async function handleSelectShelf(shelf: Shelf | null) {
+    if (!selectedSnap || !user?.id || !shelf) {
       return;
     }
 
