@@ -9,6 +9,7 @@ export type AuthUser = {
 export type UserProfile = {
   id: string;
   email: string | null;
+  displayName: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 };
@@ -22,4 +23,7 @@ export type AuthContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateDisplayName: (displayName: string) => Promise<void>;
+  sendPasswordReset: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 };

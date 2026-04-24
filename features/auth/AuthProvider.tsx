@@ -1,7 +1,18 @@
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
-import { ensureUserProfile, mapAuthUser, signIn as signInUser, signOutUser, signUp as signUpUser, subscribeToAuth } from '@/features/auth/api';
+import {
+  deleteCurrentUserAccount,
+  ensureUserProfile,
+  mapAuthUser,
+  sendPasswordReset,
+  signIn as signInUser,
+  signOutUser,
+  signUp as signUpUser,
+  subscribeToAuth,
+  updateUserDisplayName,
+} from '@/features/auth/api';
 import type { AuthContextValue, AuthStatus, AuthUser, UserProfile } from '@/features/auth/types';
+import { requireAuth } from '@/services/firebase';
 import { firebaseConfigError, isFirebaseConfigured } from '@/services/firebase';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -41,6 +52,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
+  async function syncCurrentUserProfile() {
+    const currentUser = requireAuth().currentUser;
+
+    if (!currentUser) {
+      return;
+    }
+
+    setUser(mapAuthUser(currentUser));
+    const nextProfile = await ensureUserProfile(currentUser);
+    setProfile(nextProfile);
+  }
+
   const value: AuthContextValue = {
     status,
     user,
@@ -50,6 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signIn: signInUser,
     signUp: signUpUser,
     signOut: signOutUser,
+    updateDisplayName: async (displayName) => {
+      await updateUserDisplayName(displayName);
+      await syncCurrentUserProfile();
+    },
+    sendPasswordReset,
+    deleteAccount: deleteCurrentUserAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

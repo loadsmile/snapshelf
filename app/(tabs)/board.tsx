@@ -16,6 +16,7 @@ import {
   subscribeToShelves,
   updateShelfPosition,
 } from '@/features/shelves/api';
+import { searchShelves } from '@/features/shelves/search';
 import type { Shelf, ShelfBoardVariant } from '@/features/shelves/types';
 import { createShelfThread, subscribeToThreads } from '@/features/threads/api';
 import type { ShelfThread } from '@/features/threads/types';
@@ -944,6 +945,7 @@ export default function BoardScreen() {
   );
   const shelfNamesById = useMemo(() => new Map(shelves.map((shelf) => [shelf.id, shelf.name])), [shelves]);
   const trimmedSearchQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
+  const matchingShelves = useMemo(() => searchShelves(resolvedShelves, trimmedSearchQuery), [resolvedShelves, trimmedSearchQuery]);
   const matchingSnaps = useMemo(
     () => searchSnaps(allSnaps, trimmedSearchQuery, (snap) => (snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : null)),
     [allSnaps, shelfNamesById, trimmedSearchQuery],
@@ -1221,7 +1223,7 @@ export default function BoardScreen() {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search titles, thoughts, or labels"
+              placeholder="Search shelf names, titles, thoughts, or labels"
               placeholderTextColor={theme.colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -1241,7 +1243,7 @@ export default function BoardScreen() {
             ) : null}
           </View>
 
-          <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Search across every Snap on your Board by title, thought, or label.</Text>
+          <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Search shelves by name and search every Snap by title, thought, label, or linked shelf name.</Text>
         </SurfaceCard>
       ) : null}
 
@@ -1281,17 +1283,31 @@ export default function BoardScreen() {
       {trimmedSearchQuery ? (
         <View style={{ flex: 1 }}>
           <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Snap Search</Text>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
             <Text style={[textStyles.titleMd, { marginBottom: 4 }]}>{`"${trimmedSearchQuery}"`}</Text>
             <Text style={textStyles.bodyMd}>
-              {matchingSnaps.length} result{matchingSnaps.length === 1 ? '' : 's'} across all Snaps
+              {matchingShelves.length} shelf match{matchingShelves.length === 1 ? '' : 'es'} and {matchingSnaps.length} snap result{matchingSnaps.length === 1 ? '' : 's'}
             </Text>
           </SurfaceCard>
 
-          {matchingSnaps.length === 0 ? (
-            <EmptyState title="No matching Snaps" description="Try a title word, a phrase from your thought, or one of your labels." />
+          {matchingShelves.length === 0 && matchingSnaps.length === 0 ? (
+            <EmptyState title="No matching results" description="Try a shelf name, a title word, a phrase from your thought, or one of your labels." />
           ) : (
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 124, gap: theme.spacing.md }}>
+              {matchingShelves.length > 0 ? <Text style={textStyles.eyebrow}>Shelves</Text> : null}
+              {matchingShelves.map((shelf) => (
+                <ShelfListItem
+                  key={shelf.id}
+                  shelf={shelf}
+                  coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                  snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
+                  anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
+                  onPress={() => router.push(`/shelf/${shelf.id}`)}
+                />
+              ))}
+
+              {matchingShelves.length > 0 && matchingSnaps.length > 0 ? <Text style={[textStyles.eyebrow, { marginTop: theme.spacing.sm }]}>Snaps</Text> : null}
+              {matchingShelves.length === 0 && matchingSnaps.length > 0 ? <Text style={textStyles.eyebrow}>Snaps</Text> : null}
               {matchingSnaps.map((snap) => (
                 <SnapSearchResult
                   key={snap.id}

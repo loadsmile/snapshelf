@@ -13,3 +13,11 @@ export function resolveSnapImageUri(snap: Snap): string | null {
 
   return null;
 }
+
+export async function deleteSnapImageLocally(localPath: string | null) {
+  if (!localPath || !FileSystem.documentDirectory) {
+    return;
+  }
+
+  await FileSystem.deleteAsync(`${FileSystem.documentDirectory}${localPath}`, { idempotent: true });
+}
