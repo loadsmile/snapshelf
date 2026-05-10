@@ -55,7 +55,7 @@ export function EditThreadModal({
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Edit Thread</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Pick an Anchor Shelf for this Shelf, or leave it independent.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>An Anchor Shelf draws a visible thread on the Board, helping related collections stay memorable.</Text>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}>
               <PillButton
@@ -80,6 +80,8 @@ export function EditThreadModal({
                 </View>
               ))}
             </ScrollView>
+
+            <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{selectedAnchorShelfId ? 'This Shelf will appear threaded from the selected Anchor Shelf.' : 'This Shelf will stay independent on the Board.'}</Text>
 
             {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginTop: theme.spacing.sm }]}>{error}</Text> : null}
 

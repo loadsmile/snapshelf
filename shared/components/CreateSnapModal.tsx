@@ -67,7 +67,7 @@ export function CreateSnapModal({
 
   const destinationLabel = useMemo(() => {
     if (!selectedShelfId) {
-      return 'Saving to Drop';
+      return 'Saving to The Tray';
     }
 
     return shelves.find((shelf) => shelf.id === selectedShelfId)?.name ?? 'Selected Shelf';
@@ -150,7 +150,7 @@ export function CreateSnapModal({
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{titleText}</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Choose an image, add a little context, and save it to the Drop or directly into a Shelf.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Choose an image, add a little context, and save it to The Tray or directly into a Shelf.</Text>
 
             <Pressable
               onPress={handlePickImage}
@@ -182,7 +182,7 @@ export function CreateSnapModal({
                 <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Destination</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
                   <PillButton
-                    label="Drop"
+                    label="The Tray"
                     variant={selectedShelfId === null ? 'primary' : 'secondary'}
                     size="sm"
                     onPress={() => setSelectedShelfId(null)}

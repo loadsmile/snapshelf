@@ -61,6 +61,50 @@ function SnapPreview({ colors, snap }: { colors: [string, string]; snap: Snap })
   );
 }
 
+function ShelfSummaryMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        minWidth: 118,
+        borderRadius: theme.radii.lg,
+        borderWidth: 1,
+        borderColor: theme.colors.borderSoft,
+        backgroundColor: theme.colors.background,
+        padding: theme.spacing.md,
+      }}
+    >
+      <Text style={[textStyles.titleMd, { marginBottom: 2 }]}>{value}</Text>
+      <Text style={textStyles.bodySm}>{label}</Text>
+    </View>
+  );
+}
+
+function getLatestSnap(snaps: Snap[]) {
+  return snaps.reduce<Snap | null>((latest, snap) => {
+    if (!latest) {
+      return snap;
+    }
+
+    const snapTime = (snap.capturedAt ?? snap.createdAt)?.getTime() ?? 0;
+    const latestTime = (latest.capturedAt ?? latest.createdAt)?.getTime() ?? 0;
+
+    return snapTime > latestTime ? snap : latest;
+  }, null);
+}
+
+function getShelfHighlights(snaps: Snap[]) {
+  const labels = new Set<string>();
+  const sources = new Set<string>();
+
+  snaps.forEach((snap) => {
+    snap.labels.forEach((label) => labels.add(label));
+    sources.add(getSnapSourceLabel(snap.source));
+  });
+
+  return [...labels, ...sources].slice(0, 5);
+}
+
 export default function ShelfViewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -160,6 +204,9 @@ export default function ShelfViewScreen() {
     () => shelves.find((entry) => entry.id === currentThread?.fromShelfId) ?? null,
     [currentThread?.fromShelfId, shelves],
   );
+  const latestSnap = useMemo(() => getLatestSnap(snaps), [snaps]);
+  const favoriteCount = useMemo(() => snaps.filter((snap) => snap.isFavorite).length, [snaps]);
+  const shelfHighlights = useMemo(() => getShelfHighlights(snaps), [snaps]);
   const activeError = error ?? snapsError;
 
   async function handleSaveThread(anchorShelfId: string | null) {
@@ -195,7 +242,7 @@ export default function ShelfViewScreen() {
     }
   }
 
-  async function handleMoveSnapToDrop(snap: Snap) {
+  async function handleMoveSnapToTray(snap: Snap) {
     if (!user?.id) {
       return;
     }
@@ -206,7 +253,7 @@ export default function ShelfViewScreen() {
       setError(null);
       await moveSnapToShelf(user.id, snap.id, null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to move this Snap to the Drop right now.');
+      setError(nextError instanceof Error ? nextError.message : 'Unable to move this Snap to The Tray right now.');
     } finally {
       setMovingSnapId(null);
     }
@@ -247,8 +294,8 @@ export default function ShelfViewScreen() {
 
   function handleConfirmDeleteShelf() {
     const description = shelf?.name
-      ? `Delete "${shelf.name}"? Its Snaps will move back to the Drop.`
-      : 'Delete this Shelf? Its Snaps will move back to the Drop.';
+      ? `Delete "${shelf.name}"? Its Snaps will move back to The Tray.`
+      : 'Delete this Shelf? Its Snaps will move back to The Tray.';
 
     setIsShelfMenuVisible(false);
 
@@ -304,18 +351,28 @@ export default function ShelfViewScreen() {
       </View>
 
       <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelf View</Text>
+        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelf Summary</Text>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>
-          {isLoadingSnaps ? 'Loading snaps for this shelf...' : `${snaps.length} snap${snaps.length === 1 ? '' : 's'} currently live here.`}
-        </Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Shelf is a curated collection. Revisit it to refine the Snaps, labels, and thread that make this idea easy to find later.</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
+          <ShelfSummaryMetric label="Snaps" value={isLoadingSnaps ? '...' : snaps.length} />
+          <ShelfSummaryMetric label="Favorites" value={favoriteCount} />
+          <ShelfSummaryMetric label="Latest" value={latestSnap ? formatCapturedAt(latestSnap.capturedAt ?? latestSnap.createdAt).replace('Captured ', '') : 'Empty'} />
+        </View>
+        {shelfHighlights.length > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
+            {shelfHighlights.map((highlight) => (
+              <SectionLabel key={highlight} label={highlight} />
+            ))}
+          </View>
+        ) : null}
         <PillButton label="+ Snap It" icon="plus" onPress={() => setIsCreateSnapVisible(true)} fullWidth disabled={isDeletingShelf} />
       </SurfaceCard>
 
       <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
         <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Anchor Shelf</Text>
-        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{anchorShelf?.name ?? 'No Thread Yet'}</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Threads are now explicit. This shelf only connects when you choose an Anchor Shelf.</Text>
+        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{anchorShelf ? `Threaded from ${anchorShelf.name}` : 'Independent Shelf'}</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{anchorShelf ? 'This Shelf has a visible thread on the Board, so its relationship to the anchor is easy to remember.' : 'Leave this Shelf independent, or choose an Anchor Shelf to draw a visible thread on the Board.'}</Text>
         <PillButton label="Edit Thread" icon="link" onPress={() => setIsEditThreadVisible(true)} fullWidth disabled={isDeletingShelf} />
       </SurfaceCard>
 
@@ -332,10 +389,20 @@ export default function ShelfViewScreen() {
       ) : null}
 
       {!isLoadingSnaps && snaps.length === 0 ? (
-        <EmptyState
-          title="This Shelf is still empty"
-          description="Move a Snap here from the Drop to start filling out the collection."
-        />
+        <>
+          <EmptyState
+            title="This Shelf is ready to curate"
+            description="Empty Shelves are useful containers. File Snaps here from The Tray, move existing finds from Library, or add a fresh Snap directly."
+          />
+          <SurfaceCard style={{ marginTop: theme.spacing.lg, marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Where to add from</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>Use The Tray for unorganized new Snaps. Use Library when you remember what you saved but not where it belongs.</Text>
+            <View style={{ gap: theme.spacing.sm }}>
+              <PillButton label="Open The Tray" icon="inbox" variant="secondary" fullWidth onPress={() => router.push('/tray')} disabled={isDeletingShelf} />
+              <PillButton label="Search Library" icon="book-open" variant="secondary" fullWidth onPress={() => router.push('/library')} disabled={isDeletingShelf} />
+            </View>
+          </SurfaceCard>
+        </>
       ) : null}
 
       <View style={{ gap: theme.spacing.lg }}>
@@ -407,12 +474,12 @@ export default function ShelfViewScreen() {
           actionSnap
             ? [
                 {
-                  label: 'Move to Drop',
+                  label: 'Move to The Tray',
                   icon: 'arrow-down',
                   disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null,
                   loading: movingSnapId === actionSnap.id,
                   onPress: () => {
-                    void handleMoveSnapToDrop(actionSnap);
+                    void handleMoveSnapToTray(actionSnap);
                   },
                 },
                 {

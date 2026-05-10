@@ -46,12 +46,12 @@ Focus on:
 - first snap card visibility in first viewport
 ```
 
-### Session 2: Make Drop Fast to Triage
+### Session 2: Make The Tray Fast to Triage
 
-Product goal: help users process new snaps quickly instead of letting the Drop pile up.
+Product goal: help users process new snaps quickly instead of letting The Tray pile up.
 
 Focus:
-- Redesign `Drop` around fast triage
+- Redesign `The Tray` around fast triage
 - Make the most common actions feel one-tap or two-tap:
   - move to shelf
   - favorite
@@ -62,7 +62,7 @@ Focus:
 
 Why this matters:
 - Capture without triage leads to clutter
-- Drop is the inbox; if inbox cleanup is painful, the whole product feels heavy
+- The Tray is the inbox; if inbox cleanup is painful, the whole product feels heavy
 
 Success criteria:
 - A user can process several snaps quickly
@@ -73,7 +73,7 @@ Success criteria:
 Suggested prompt:
 
 ```text
-Redesign the Drop screen for faster triage.
+Redesign The Tray screen for faster triage.
 
 Goals:
 - make it easier to move, favorite, archive, and delete snaps
@@ -82,7 +82,7 @@ Goals:
 - avoid large stacked cards if a denser layout works better
 - keep existing data behavior unless a bug is found
 
-Please inspect the current Drop screen first, then implement the smallest good redesign and run typecheck/tests afterward.
+Please inspect the current Tray screen first, then implement the smallest good redesign and run typecheck/tests afterward.
 ```
 
 ### Session 3: Make Organization Feel Meaningful
@@ -95,7 +95,7 @@ Focus:
   - better shelf detail view
   - stronger shelf metadata and context
   - improved board readability
-  - clearer relationship between Drop, Library, and Shelves
+  - clearer relationship between The Tray, Library, and Shelves
 - Add small UX touches that reinforce mental models:
   - better shelf summaries
   - more helpful empty states
@@ -122,7 +122,7 @@ Goals:
 - keep the visual language consistent with the calmer Library redesign
 - prefer focused UX improvements over broad rewrites
 
-Please inspect Board, Shelf view, and their relationship to Drop/Library first, then recommend and implement the highest-value improvements.
+Please inspect Board, Shelf view, and their relationship to The Tray/Library first, then recommend and implement the highest-value improvements.
 ```
 
 ## Why This Order

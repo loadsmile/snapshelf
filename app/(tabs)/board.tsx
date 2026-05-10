@@ -526,20 +526,81 @@ function ViewModeToggle({ viewMode, onChange }: { viewMode: BoardViewMode; onCha
   );
 }
 
+function SummaryPill({ label, value }: { label: string; value: string | number }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        borderRadius: theme.radii.pill,
+        borderWidth: 1,
+        borderColor: theme.colors.borderSoft,
+        backgroundColor: theme.colors.background,
+        paddingHorizontal: 10,
+        paddingVertical: 7,
+      }}
+    >
+      <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{value}</Text>
+      <Text style={textStyles.bodySm}>{label}</Text>
+    </View>
+  );
+}
+
+function BoardOrientationCard({
+  shelfCount,
+  organizedSnapCount,
+  traySnapCount,
+  threadCount,
+  onDismiss,
+}: {
+  shelfCount: number;
+  organizedSnapCount: number;
+  traySnapCount: number;
+  threadCount: number;
+  onDismiss: () => void;
+}) {
+  return (
+    <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.spacing.md }}>
+        <View style={{ flex: 1 }}>
+          <Text style={[textStyles.eyebrow, { marginBottom: 4 }]}>Organization Map</Text>
+          <Text style={[textStyles.bodySm, { marginBottom: theme.spacing.sm }]}>Shelves live here. The Tray stays unfiled, and Library finds everything.</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <SummaryPill label="Shelves" value={shelfCount} />
+            <SummaryPill label="Filed" value={organizedSnapCount} />
+            <SummaryPill label="Tray" value={traySnapCount} />
+            <SummaryPill label="Threads" value={threadCount} />
+          </View>
+        </View>
+        <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button" accessibilityLabel="Hide organization map">
+          <Feather name="x" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+      </View>
+    </SurfaceCard>
+  );
+}
+
 function ShelfListItem({
   shelf,
   coverSnap,
   snapCount,
+  latestSnap,
   anchorShelfName,
   onPress,
 }: {
   shelf: ReturnType<typeof getResolvedShelf>;
   coverSnap: Snap | null;
   snapCount: number;
+  latestSnap: Snap | null;
   anchorShelfName: string | null;
   onPress: () => void;
 }) {
   const colors = getShelfPalette(shelf.name);
+  const countCopy = snapCount === 0 ? 'Ready to curate' : `${snapCount} Snap${snapCount === 1 ? '' : 's'}`;
+  const detailCopy = latestSnap
+    ? `${formatCapturedAt(latestSnap.capturedAt ?? latestSnap.createdAt)} - ${getSnapHeadline(latestSnap)}`
+    : 'Empty Shelf. Move a Snap here from The Tray or Library.';
 
   return (
     <Pressable onPress={onPress}>
@@ -581,9 +642,8 @@ function ShelfListItem({
             <Text style={[textStyles.titleLg, { marginBottom: 4 }]} numberOfLines={1}>
               {shelf.name}
             </Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: anchorShelfName ? theme.spacing.sm : 0 }]}>
-              {snapCount} Snap{snapCount === 1 ? '' : 's'}
-            </Text>
+            <Text style={[textStyles.bodySm, { marginBottom: theme.spacing.xs, color: theme.colors.text }]}>{countCopy}</Text>
+            <Text style={[textStyles.bodySm, { marginBottom: anchorShelfName ? theme.spacing.sm : 0 }]} numberOfLines={2}>{detailCopy}</Text>
 
             {anchorShelfName ? (
               <View
@@ -599,7 +659,7 @@ function ShelfListItem({
                 }}
               >
                 <Feather name="corner-up-left" size={13} color={theme.colors.primaryDeep} />
-                <Text style={[textStyles.bodySm, { color: theme.colors.accentDeep }]}>Linked to {anchorShelfName}</Text>
+                <Text style={[textStyles.bodySm, { color: theme.colors.accentDeep }]}>Threaded from {anchorShelfName}</Text>
               </View>
             ) : null}
           </View>
@@ -805,6 +865,7 @@ export default function BoardScreen() {
   const [createShelfError, setCreateShelfError] = useState<string | null>(null);
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isOrganizationMapVisible, setIsOrganizationMapVisible] = useState(true);
 
   const bootstrappingIds = useRef(new Set<string>());
   const transformRef = useRef(boardTransform);
@@ -928,6 +989,27 @@ export default function BoardScreen() {
 
     return counts;
   }, [allSnaps]);
+  const latestSnapsByShelfId = useMemo(() => {
+    const latestSnaps = new Map<string, Snap>();
+
+    allSnaps.forEach((snap) => {
+      if (!snap.shelfId) {
+        return;
+      }
+
+      const current = latestSnaps.get(snap.shelfId);
+      const snapTime = (snap.capturedAt ?? snap.createdAt)?.getTime() ?? 0;
+      const currentTime = (current?.capturedAt ?? current?.createdAt)?.getTime() ?? 0;
+
+      if (!current || snapTime > currentTime) {
+        latestSnaps.set(snap.shelfId, snap);
+      }
+    });
+
+    return latestSnaps;
+  }, [allSnaps]);
+  const organizedSnapCount = useMemo(() => allSnaps.filter((snap) => snap.shelfId !== null).length, [allSnaps]);
+  const traySnapCount = useMemo(() => allSnaps.filter((snap) => snap.shelfId === null && !snap.isArchived).length, [allSnaps]);
   const renderableThreads = useMemo(
     () => threads.filter((thread) => shelvesById.has(thread.fromShelfId) && shelvesById.has(thread.toShelfId)),
     [shelvesById, threads],
@@ -1276,7 +1358,7 @@ export default function BoardScreen() {
       {!trimmedSearchQuery && !isLoadingShelves && shelves.length === 0 ? (
         <EmptyState
           title="Your Board is waiting for its first Shelf"
-          description={__DEV__ ? 'Use the dev-only sample data action in Settings to create a few live Shelves and Snaps.' : 'New Shelves will appear here once you start organizing Snaps.'}
+          description={__DEV__ ? 'Use the dev-only sample data action in Settings to create live Shelves, then arrange them here.' : 'Capture into The Tray, move keepers into Shelves, then arrange those Shelves here.'}
         />
       ) : null}
 
@@ -1285,7 +1367,7 @@ export default function BoardScreen() {
           <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
             <Text style={[textStyles.titleMd, { marginBottom: 4 }]}>{`"${trimmedSearchQuery}"`}</Text>
-            <Text style={textStyles.bodyMd}>
+            <Text style={textStyles.bodySm}>
               {matchingShelves.length} shelf match{matchingShelves.length === 1 ? '' : 'es'} and {matchingSnaps.length} snap result{matchingSnaps.length === 1 ? '' : 's'}
             </Text>
           </SurfaceCard>
@@ -1301,6 +1383,7 @@ export default function BoardScreen() {
                   shelf={shelf}
                   coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
                   snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
+                  latestSnap={latestSnapsByShelfId.get(shelf.id) ?? null}
                   anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
                   onPress={() => router.push(`/shelf/${shelf.id}`)}
                 />
@@ -1312,14 +1395,14 @@ export default function BoardScreen() {
                 <SnapSearchResult
                   key={snap.id}
                   snap={snap}
-                  shelfName={snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? 'Shelf' : 'Drop'}
+                  shelfName={snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? 'Shelf' : 'The Tray'}
                   onPress={() => {
                     if (snap.shelfId) {
                       router.push(`/shelf/${snap.shelfId}`);
                       return;
                     }
 
-                    router.push('/drop');
+                    router.push('/tray');
                   }}
                 />
               ))}
@@ -1330,142 +1413,185 @@ export default function BoardScreen() {
 
       {!trimmedSearchQuery && resolvedShelves.length > 0 ? (
         <View style={{ flex: 1 }}>
-          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-
-          {viewMode === 'grid' ? (
-            <View
-              onLayout={(event) => {
-                const { width, height } = event.nativeEvent.layout;
-                setViewport({ x: width, y: height });
-              }}
-              style={{ flex: 1, overflow: 'hidden' }}
-              onStartShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
-              onMoveShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
-              onResponderGrant={(event) => {
-                if (event.nativeEvent.touches.length >= 2) {
-                  handlePinchStart(event.nativeEvent.touches);
-                }
-              }}
-              onResponderMove={(event) => {
-                if (event.nativeEvent.touches.length >= 2) {
-                  handlePinchMove(event.nativeEvent.touches);
-                }
-              }}
-              onResponderRelease={() => {
-                pinchGestureRef.current = null;
-              }}
-              onResponderTerminate={() => {
-                pinchGestureRef.current = null;
-              }}
-            >
-              <View
-                {...backgroundPanResponder.panHandlers}
+          {isOrganizationMapVisible ? (
+            <BoardOrientationCard
+              shelfCount={resolvedShelves.length}
+              organizedSnapCount={organizedSnapCount}
+              traySnapCount={traySnapCount}
+              threadCount={renderableThreads.length}
+              onDismiss={() => setIsOrganizationMapVisible(false)}
+            />
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+            {!isOrganizationMapVisible ? (
+              <Pressable
+                onPress={() => setIsOrganizationMapVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Show how to use the Board"
                 style={{
-                  position: 'absolute',
-                  inset: 0,
-                }}
-              />
-
-              <View
-                pointerEvents="box-none"
-                style={{
-                  position: 'absolute',
-                  left: boardTransform.x,
-                  top: boardTransform.y,
-                  width: CANVAS_WIDTH,
-                  height: CANVAS_HEIGHT,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  borderWidth: 1,
+                  borderColor: theme.colors.borderSoft,
+                  backgroundColor: theme.colors.surface,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: theme.spacing.lg,
+                  ...theme.shadows.card,
                 }}
               >
+                <Feather name="help-circle" size={20} color={theme.colors.primary} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {viewMode === 'grid' ? (
+            <>
+              <View
+                style={{ marginBottom: theme.spacing.md }}
+              >
+                <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Pinch or use controls to zoom. Drag Shelves to arrange the system.</Text>
+              </View>
+              <View
+                onLayout={(event) => {
+                  const { width, height } = event.nativeEvent.layout;
+                  setViewport({ x: width, y: height });
+                }}
+                style={{ flex: 1, overflow: 'hidden' }}
+                onStartShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
+                onMoveShouldSetResponderCapture={(event) => event.nativeEvent.touches.length >= 2}
+                onResponderGrant={(event) => {
+                  if (event.nativeEvent.touches.length >= 2) {
+                    handlePinchStart(event.nativeEvent.touches);
+                  }
+                }}
+                onResponderMove={(event) => {
+                  if (event.nativeEvent.touches.length >= 2) {
+                    handlePinchMove(event.nativeEvent.touches);
+                  }
+                }}
+                onResponderRelease={() => {
+                  pinchGestureRef.current = null;
+                }}
+                onResponderTerminate={() => {
+                  pinchGestureRef.current = null;
+                }}
+              >
+                <View
+                  {...backgroundPanResponder.panHandlers}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                  }}
+                />
+
                 <View
                   pointerEvents="box-none"
                   style={{
                     position: 'absolute',
-                    left: (CANVAS_WIDTH * (boardTransform.scale - 1)) / 2,
-                    top: (CANVAS_HEIGHT * (boardTransform.scale - 1)) / 2,
+                    left: boardTransform.x,
+                    top: boardTransform.y,
                     width: CANVAS_WIDTH,
                     height: CANVAS_HEIGHT,
-                    transform: [{ scale: boardTransform.scale }],
                   }}
                 >
-                  <DottedCanvas />
+                  <View
+                    pointerEvents="box-none"
+                    style={{
+                      position: 'absolute',
+                      left: (CANVAS_WIDTH * (boardTransform.scale - 1)) / 2,
+                      top: (CANVAS_HEIGHT * (boardTransform.scale - 1)) / 2,
+                      width: CANVAS_WIDTH,
+                      height: CANVAS_HEIGHT,
+                      transform: [{ scale: boardTransform.scale }],
+                    }}
+                  >
+                    <DottedCanvas />
 
-                  {renderableThreads.map((thread) => {
-                    const fromShelf = shelvesById.get(thread.fromShelfId);
-                    const toShelf = shelvesById.get(thread.toShelfId);
+                    {renderableThreads.map((thread) => {
+                      const fromShelf = shelvesById.get(thread.fromShelfId);
+                      const toShelf = shelvesById.get(thread.toShelfId);
 
-                    if (!fromShelf || !toShelf) {
-                      return null;
-                    }
+                      if (!fromShelf || !toShelf) {
+                        return null;
+                      }
 
-                    return renderThread(getNodeCenter(fromShelf), getNodeCenter(toShelf), `thread-${thread.id}`);
-                  })}
+                      return renderThread(getNodeCenter(fromShelf), getNodeCenter(toShelf), `thread-${thread.id}`);
+                    })}
 
-                  {resolvedShelves.map((shelf) => (
-                    <DraggableShelfNode
-                      key={shelf.id}
-                      shelf={shelf}
-                      scale={boardTransform.scale}
-                      coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
-                      onPress={() => router.push(`/shelf/${shelf.id}`)}
-                      onDrag={(x, y) => {
-                        handleShelfDrag(shelf.id, x, y);
-                      }}
-                      onDragEnd={(x, y) => {
-                        handleShelfDragEnd(shelf.id, x, y);
-                      }}
-                    />
-                  ))}
+                    {resolvedShelves.map((shelf) => (
+                      <DraggableShelfNode
+                        key={shelf.id}
+                        shelf={shelf}
+                        scale={boardTransform.scale}
+                        coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                        onPress={() => router.push(`/shelf/${shelf.id}`)}
+                        onDrag={(x, y) => {
+                          handleShelfDrag(shelf.id, x, y);
+                        }}
+                        onDragEnd={(x, y) => {
+                          handleShelfDragEnd(shelf.id, x, y);
+                        }}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                <View
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    bottom: 114,
+                    width: 58,
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: 30,
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                    gap: 16,
+                    shadowColor: theme.colors.shadow,
+                    shadowOpacity: 0.08,
+                    shadowRadius: 18,
+                    shadowOffset: { width: 0, height: 10 },
+                  }}
+                >
+                  <Pressable onPress={() => zoomTo(boardTransform.scale + 0.12)} hitSlop={10}>
+                    <Feather name="plus" size={24} color={theme.colors.primary} />
+                  </Pressable>
+                  <View style={{ width: 28, height: 1, backgroundColor: theme.colors.borderSoft }} />
+                  <Pressable
+                    onPress={() => {
+                      if (boardTransform.scale - 0.12 <= fitScale + 0.01) {
+                        zoomToFit();
+                        return;
+                      }
+
+                      zoomTo(boardTransform.scale - 0.12);
+                    }}
+                    hitSlop={10}
+                  >
+                    <Feather name="minus" size={24} color={theme.colors.primary} />
+                  </Pressable>
                 </View>
               </View>
-
-              <View
-                style={{
-                  position: 'absolute',
-                  right: 4,
-                  top: 280,
-                  width: 74,
-                  backgroundColor: theme.colors.surface,
-                  borderRadius: 38,
-                  paddingVertical: 20,
-                  alignItems: 'center',
-                  gap: 22,
-                  shadowColor: theme.colors.shadow,
-                  shadowOpacity: 0.08,
-                  shadowRadius: 18,
-                  shadowOffset: { width: 0, height: 10 },
-                }}
-              >
-                <Pressable onPress={() => zoomTo(boardTransform.scale + 0.12)} hitSlop={10}>
-                  <Feather name="plus" size={28} color={theme.colors.primary} />
-                </Pressable>
-                <View style={{ width: 28, height: 1, backgroundColor: theme.colors.borderSoft }} />
-                <Pressable
-                  onPress={() => {
-                    if (boardTransform.scale - 0.12 <= fitScale + 0.01) {
-                      zoomToFit();
-                      return;
-                    }
-
-                    zoomTo(boardTransform.scale - 0.12);
-                  }}
-                  hitSlop={10}
-                >
-                  <Feather name="minus" size={28} color={theme.colors.primary} />
-                </Pressable>
-              </View>
-            </View>
+            </>
           ) : (
             <ScrollView
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 124 }}
             >
+              <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md }}>
+                <Text style={textStyles.bodySm}>Use List as a readable map of every Shelf, including empty containers and threaded relationships.</Text>
+              </SurfaceCard>
               {resolvedShelves.map((shelf, index) => (
                 <View key={shelf.id} style={{ marginBottom: index === resolvedShelves.length - 1 ? 0 : theme.spacing.md }}>
                   <ShelfListItem
                     shelf={shelf}
                     coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
                     snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
+                    latestSnap={latestSnapsByShelfId.get(shelf.id) ?? null}
                     anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
                     onPress={() => router.push(`/shelf/${shelf.id}`)}
                   />

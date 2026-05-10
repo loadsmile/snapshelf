@@ -47,7 +47,7 @@ All use Firestore `onSnapshot()`:
 |---|---|---|
 | `subscribeToShelves` | `users/{userId}/shelves` | `createdAt` asc |
 | `subscribeToAllSnaps` | `users/{userId}/snaps` | `createdAt` desc |
-| `subscribeToDropSnaps` | `where('shelfId', '==', null)` | `createdAt` desc |
+| `subscribeToTraySnaps` | `where('shelfId', '==', null)` | `createdAt` desc |
 | `subscribeToShelfSnaps` | `where('shelfId', '==', shelfId)` | `createdAt` desc |
 | `subscribeToThreads` | `users/{userId}/threads` | — |
 
@@ -148,7 +148,7 @@ Row offset for `index >= 8`: `+180px` horizontal, `+110px` vertical per row
 ### Creation (`features/snaps/api.ts:165-187`)
 ```typescript
 createSnap(userId, {
-  shelfId,        // null for Drop
+  shelfId,        // null for The Tray
   title,
   imageUrl,       // optional remote URL fallback
   localPath,      // relative path under Expo documentDirectory
@@ -176,7 +176,7 @@ createSnap(userId, {
 - Removes the locally cached image file if `localPath` exists
 
 ### Pagination
-- Drop and Shelf views use cursor-based pagination (`listDropSnaps`, `listShelfSnaps`)
+- Tray and Shelf views use cursor-based pagination (`listTraySnaps`, `listShelfSnaps`)
 - `usePaginatedSnaps()` keeps the first page live via `onSnapshot()` and appends older pages on demand
 
 ### Library Search & Filtering (`features/snaps/library.ts:5-127`, `app/(tabs)/library.tsx`)
@@ -228,7 +228,7 @@ createSnap(userId, {
    - Save image locally if present
    - Combine note + webUrl/text into `thought`
    - `createSnap()` with source `'quick-snap'`
-   - Route to shelf view or Drop
+   - Route to shelf view or The Tray
 
 ### Android Gate (`app/_layout.tsx:71-120`)
 - Android share intents arrive after activity resume
@@ -272,14 +272,14 @@ createSnap(userId, {
 | `SnapArtwork` | Image with gradient fallback |
 | `SectionLabel` | Pill-shaped eyebrow text |
 | `EmptyState` | Bordered container for empty lists |
-| `BoardIcon` / `DropIcon` | SVG tab bar icons |
+| `BoardIcon` / `TrayIcon` | SVG tab bar icons |
 
 ### Providers & Hooks
 | Export | Purpose |
 |---|---|
 | `AuthProvider` / `useAuth()` | Auth state, profile data, and auth actions for the app tree |
 | `RetainedShareIntentProvider` / `useRetainedShareIntentContext()` | Keeps share payloads available across route transitions and Android resume timing |
-| `usePaginatedSnaps()` | Live first-page Snap subscription with cursor-based pagination for Drop and Shelf views |
+| `usePaginatedSnaps()` | Live first-page Snap subscription with cursor-based pagination for Tray and Shelf views |
 
 ---
 
@@ -341,13 +341,13 @@ app/
 │   ├── _layout.tsx          # Tabs: CustomTabBar, no headers
 │   ├── board.tsx            # Tab 1: Shelf canvas
 │   ├── library.tsx          # Tab 2: Full-account snap search and filtering
-│   ├── drop.tsx             # Tab 3: Unsorted snaps
+│   ├── tray.tsx             # Tab 3: The Tray / unsorted snaps
 │   └── settings.tsx         # Tab 4: Settings
 └── shelf/
     └── [id].tsx             # Shelf detail view (outside tabs)
 ```
 
-Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
+Deep linking: `snapshelf://board`, `snapshelf://tray`, etc.
 
 ---
 
@@ -387,7 +387,7 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 | `clearShelfCoverSnap` | `Promise<void>` | Clears stale `coverSnapId` after Snap deletion |
 | `updateShelfPosition` | `Promise<void>` | Merge board coords |
 | `bootstrapShelfPlacement` | `Promise<void>` | Set default placement |
-| `deleteShelf` | `Promise<void>` | Moves Shelf Snaps to Drop, deletes related threads, then deletes Shelf |
+| `deleteShelf` | `Promise<void>` | Moves Shelf Snaps to The Tray, deletes related threads, then deletes Shelf |
 
 ### Snaps API
 | Function | Returns | Notes |
@@ -398,8 +398,8 @@ Deep linking: `snapshelf://board`, `snapshelf://drop`, etc.
 | `saveSnapImageLocally` | `Promise<string>` | Compress + cache image under `documentDirectory/snaps/` |
 | `listAllSnaps` | `Promise<Snap[]>` | All snaps, newest first |
 | `subscribeToAllSnaps` | unsubscribe | Real-time all, optional page cap |
-| `listDropSnaps` | `Promise<{snaps, cursor}>` | First or next Drop page |
-| `subscribeToDropSnaps` | unsubscribe | Real-time Drop first page |
+| `listTraySnaps` | `Promise<{snaps, cursor}>` | First or next Tray page |
+| `subscribeToTraySnaps` | unsubscribe | Real-time Tray first page |
 | `listShelfSnaps` | `Promise<{snaps, cursor}>` | First or next Shelf page |
 | `subscribeToShelfSnaps` | unsubscribe | Real-time Shelf first page |
 | `moveSnapToShelf` | `Promise<void>` | Move + touch shelf |

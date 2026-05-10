@@ -5,7 +5,7 @@ import type { Snap, SnapSource } from '@/features/snaps/types';
 export type SnapLibraryDateRange = 'any' | '7d' | '30d' | '90d' | 'year';
 export type SnapLibrarySort = 'newest' | 'oldest' | 'updated' | 'favorites';
 export type SnapLibraryStatus = 'active' | 'archived' | 'all';
-export type SnapLibraryShelfFilter = 'all' | 'drop' | string;
+export type SnapLibraryShelfFilter = 'all' | 'tray' | string;
 
 export type SnapLibraryFilters = {
   query: string;
@@ -23,7 +23,7 @@ export function getSnapTimelineDate(snap: Snap) {
 }
 
 function getSnapSearchContext(snap: Snap, shelfNamesById: Map<string, string>) {
-  const shelfName = snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : 'drop';
+  const shelfName = snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : 'tray';
   return [shelfName, getSnapSourceLabel(snap.source)].filter(Boolean).join(' ');
 }
 
@@ -96,11 +96,11 @@ export function filterLibrarySnaps(snaps: Snap[], filters: SnapLibraryFilters, s
         return false;
       }
 
-      if (filters.shelfId === 'drop' && snap.shelfId !== null) {
+      if (filters.shelfId === 'tray' && snap.shelfId !== null) {
         return false;
       }
 
-      if (filters.shelfId !== 'all' && filters.shelfId !== 'drop' && snap.shelfId !== filters.shelfId) {
+      if (filters.shelfId !== 'all' && filters.shelfId !== 'tray' && snap.shelfId !== filters.shelfId) {
         return false;
       }
 

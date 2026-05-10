@@ -31,6 +31,13 @@ describe('pagination helpers', () => {
     expect(mergeFirstPageSnaps(current, nextPage).map((snap) => snap.id)).toEqual(['a', 'b', 'c', 'd']);
   });
 
+  it('removes snaps that disappeared from the previous first page', () => {
+    const current = [buildSnap('a'), buildSnap('b'), buildSnap('c'), buildSnap('d')];
+    const nextPage = [buildSnap('b'), buildSnap('c')];
+
+    expect(mergeFirstPageSnaps(current, nextPage, new Set(['a', 'b', 'c'])).map((snap) => snap.id)).toEqual(['b', 'c', 'd']);
+  });
+
   it('appends only snaps that are not already loaded', () => {
     const current = [buildSnap('a'), buildSnap('b')];
     const nextPage = [buildSnap('b'), buildSnap('c'), buildSnap('d')];

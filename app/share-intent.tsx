@@ -151,7 +151,7 @@ export default function ShareIntentScreen() {
       if (selectedShelfId) {
         router.replace(`/shelf/${selectedShelfId}`);
       } else {
-        router.replace('/drop');
+        router.replace('/tray');
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to save this Quick Snap right now.');
@@ -195,7 +195,7 @@ export default function ShareIntentScreen() {
 
       <SurfaceCard style={{ padding: theme.spacing.lg }}>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Quick Snap</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Review what was shared, add a note if you want, then save it to the Drop or straight into a Shelf.</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Review what was shared, add a note if you want, then save it to The Tray or straight into a Shelf.</Text>
 
         <SnapArtwork
           imageUri={imagePath}
@@ -227,7 +227,7 @@ export default function ShareIntentScreen() {
         <View style={{ marginBottom: theme.spacing.md }}>
           <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Save To</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
-            <PillButton label="Drop" variant={selectedShelfId === null ? 'primary' : 'secondary'} size="sm" onPress={() => setSelectedShelfId(null)} disabled={isSubmitting} />
+            <PillButton label="The Tray" variant={selectedShelfId === null ? 'primary' : 'secondary'} size="sm" onPress={() => setSelectedShelfId(null)} disabled={isSubmitting} />
             {shelves.map((shelf) => (
               <PillButton
                 key={shelf.id}

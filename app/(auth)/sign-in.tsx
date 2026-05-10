@@ -41,7 +41,7 @@ export default function SignInScreen() {
       <View style={{ marginBottom: theme.spacing.xl }}>
         <Text style={[textStyles.brand, { marginBottom: theme.spacing.lg }]}>SnapShelf</Text>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Sign In</Text>
-        <Text style={textStyles.bodyMd}>Pick up your Board, Drop, and Shelves from any device.</Text>
+        <Text style={textStyles.bodyMd}>Pick up your Board, The Tray, and Shelves from any device.</Text>
       </View>
 
       {configError ? (

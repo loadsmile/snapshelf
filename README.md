@@ -6,7 +6,7 @@ The current MVP stores Snap media on-device and keeps structured metadata in Fir
 
 ## Features
 
-- Board, Drop, and Shelf views
+- Board, The Tray, and Shelf views
 - Email/password auth with Firebase Auth
 - Firestore-backed shelves, snaps, and threads
 - On-device image processing and local file storage for Snap media

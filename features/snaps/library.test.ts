@@ -56,7 +56,7 @@ describe('library snap helpers', () => {
       updatedAt: new Date('2026-04-22T09:00:00.000Z'),
     }),
     buildSnap({
-      id: 'drop-snap',
+      id: 'tray-snap',
       shelfId: null,
       title: 'Packing List',
       labels: ['travel'],
@@ -78,7 +78,7 @@ describe('library snap helpers', () => {
   ];
 
   it('filters by active status by default', () => {
-    expect(filterLibrarySnaps(snaps, buildFilters(), shelfNamesById, now).map((snap) => snap.id)).toEqual(['active-favorite', 'drop-snap']);
+    expect(filterLibrarySnaps(snaps, buildFilters(), shelfNamesById, now).map((snap) => snap.id)).toEqual(['active-favorite', 'tray-snap']);
   });
 
   it('searches across shelf names and source labels', () => {
@@ -103,7 +103,7 @@ describe('library snap helpers', () => {
 
     expect(filterLibrarySnaps(snaps, buildFilters({ status: 'all', sort: 'favorites' }), shelfNamesById, now).map((snap) => snap.id)).toEqual([
       'active-favorite',
-      'drop-snap',
+      'tray-snap',
       'archived-snap',
     ]);
   });

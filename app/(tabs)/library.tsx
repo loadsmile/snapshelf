@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
 import {
@@ -146,12 +146,72 @@ function AppliedFilterChip({ label, onClear }: { label: string; onClear: () => v
         backgroundColor: theme.colors.surface,
         paddingHorizontal: 12,
         paddingVertical: 9,
+        maxWidth: '100%',
       }}
     >
-      <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{label}</Text>
+      <Text style={[textStyles.bodySm, { color: theme.colors.text }]} numberOfLines={1}>{label}</Text>
       <Feather name="x" size={14} color={theme.colors.textMuted} />
     </Pressable>
   );
+}
+
+function formatSnapCount(count: number) {
+  return `${count} Snap${count === 1 ? '' : 's'}`;
+}
+
+function formatSnapMatchCopy(count: number, context: string) {
+  return `${formatSnapCount(count)} ${count === 1 ? 'matches' : 'match'} ${context}`;
+}
+
+function getLibraryResultCopy({
+  visibleCount,
+  totalCount,
+  hasSearch,
+  activeFilterCount,
+}: {
+  visibleCount: number;
+  totalCount: number;
+  hasSearch: boolean;
+  activeFilterCount: number;
+}) {
+  if (totalCount === 0) {
+    return 'No Snaps yet';
+  }
+
+  if (hasSearch && activeFilterCount > 0) {
+    return formatSnapMatchCopy(visibleCount, 'your search and filters');
+  }
+
+  if (hasSearch) {
+    return formatSnapMatchCopy(visibleCount, 'your search');
+  }
+
+  if (activeFilterCount > 0) {
+    return formatSnapMatchCopy(visibleCount, 'your filters');
+  }
+
+  return `${formatSnapCount(totalCount)} in your Library`;
+}
+
+function getNoResultsCopy(hasSearch: boolean, activeFilterCount: number) {
+  if (hasSearch && activeFilterCount > 0) {
+    return {
+      title: 'No Snaps match this search',
+      description: 'Try a broader search, clear a filter, or switch status to All.',
+    };
+  }
+
+  if (hasSearch) {
+    return {
+      title: 'No Snaps found',
+      description: 'Try a different title, thought, shelf, label, or source.',
+    };
+  }
+
+  return {
+    title: 'No Snaps match these filters',
+    description: 'Clear a filter, choose another shelf, or switch status to All.',
+  };
 }
 
 function LibrarySnapCard({
@@ -245,6 +305,7 @@ function LibrarySnapCard({
 
 export default function LibraryScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { isConfigured, user } = useAuth();
   const [snaps, setSnaps] = useState<Snap[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -254,7 +315,7 @@ export default function LibraryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [status, setStatus] = useState<SnapLibraryStatus>('active');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [selectedShelfId, setSelectedShelfId] = useState<'all' | 'drop' | string>('all');
+  const [selectedShelfId, setSelectedShelfId] = useState<'all' | 'tray' | string>('all');
   const [selectedSource, setSelectedSource] = useState<SnapSource | 'all'>('all');
   const [selectedLabel, setSelectedLabel] = useState<string | 'all'>('all');
   const [selectedDateRange, setSelectedDateRange] = useState<SnapLibraryDateRange>('any');
@@ -267,6 +328,8 @@ export default function LibraryScreen() {
   const [busyAction, setBusyAction] = useState<'move' | 'favorite' | 'archive' | 'delete' | null>(null);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isCompactWidth = width < 390;
+  const hasSearch = deferredSearchQuery.trim().length > 0;
 
   useEffect(() => {
     if (!user?.id) {
@@ -370,7 +433,7 @@ export default function LibraryScreen() {
     if (selectedShelfId !== 'all') {
       filters.push({
         key: 'shelf',
-        label: selectedShelfId === 'drop' ? 'Drop' : shelfNamesById.get(selectedShelfId) ?? 'Shelf',
+        label: selectedShelfId === 'tray' ? 'Shelf: The Tray' : `Shelf: ${shelfNamesById.get(selectedShelfId) ?? 'Shelf'}`,
         onClear: () => setSelectedShelfId('all'),
       });
     }
@@ -378,7 +441,7 @@ export default function LibraryScreen() {
     if (selectedSource !== 'all') {
       filters.push({
         key: 'source',
-        label: sourceLabel,
+        label: `Source: ${sourceLabel}`,
         onClear: () => setSelectedSource('all'),
       });
     }
@@ -386,7 +449,7 @@ export default function LibraryScreen() {
     if (selectedLabel !== 'all') {
       filters.push({
         key: 'label',
-        label: selectedLabel,
+        label: `Label: ${selectedLabel}`,
         onClear: () => setSelectedLabel('all'),
       });
     }
@@ -394,7 +457,7 @@ export default function LibraryScreen() {
     if (selectedDateRange !== 'any') {
       filters.push({
         key: 'date',
-        label: dateRangeLabel,
+        label: `Date: ${dateRangeLabel}`,
         onClear: () => setSelectedDateRange('any'),
       });
     }
@@ -402,7 +465,7 @@ export default function LibraryScreen() {
     if (favoritesOnly) {
       filters.push({
         key: 'favorites',
-        label: 'Favorites',
+        label: 'Favorites only',
         onClear: () => setFavoritesOnly(false),
       });
     }
@@ -410,7 +473,7 @@ export default function LibraryScreen() {
     if (status !== 'active') {
       filters.push({
         key: 'status',
-        label: status === 'archived' ? 'Archived' : 'All Statuses',
+        label: status === 'archived' ? 'Status: Archived' : 'Status: All',
         onClear: () => setStatus('active'),
       });
     }
@@ -418,7 +481,7 @@ export default function LibraryScreen() {
     if (sort !== 'newest') {
       filters.push({
         key: 'sort',
-        label: sortLabel,
+        label: `Sort: ${sortLabel}`,
         onClear: () => setSort('newest'),
       });
     }
@@ -426,6 +489,13 @@ export default function LibraryScreen() {
     return filters;
   }, [dateRangeLabel, favoritesOnly, selectedDateRange, selectedLabel, selectedShelfId, selectedSource, shelfNamesById, sort, sortLabel, sourceLabel, status]);
   const activeFilterCount = appliedFilters.length;
+  const resultCopy = getLibraryResultCopy({
+    visibleCount: visibleSnaps.length,
+    totalCount: snaps.length,
+    hasSearch,
+    activeFilterCount,
+  });
+  const noResultsCopy = getNoResultsCopy(hasSearch, activeFilterCount);
 
   function resetSheetFilters() {
     setStatus('active');
@@ -526,7 +596,7 @@ export default function LibraryScreen() {
       return;
     }
 
-    router.push('/drop');
+    router.push('/tray');
   }
 
   return (
@@ -535,7 +605,7 @@ export default function LibraryScreen() {
 
       <View style={{ marginBottom: theme.spacing.lg }}>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Library</Text>
-        <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Search your full collection and bring in deeper filters only when you need them.</Text>
+        <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Find any Snap fast, whether it is still in The Tray, filed into a Shelf, or archived for later.</Text>
       </View>
 
       {!isConfigured ? (
@@ -589,7 +659,14 @@ export default function LibraryScreen() {
         ) : null}
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginBottom: activeFilterCount > 0 ? theme.spacing.sm : theme.spacing.md }}>
+      <View
+        style={{
+          flexDirection: isCompactWidth ? 'column' : 'row',
+          alignItems: 'stretch',
+          gap: theme.spacing.sm,
+          marginBottom: activeFilterCount > 0 ? theme.spacing.sm : theme.spacing.md,
+        }}
+      >
         <View style={{ flex: 1 }}>
           <CompactControlPill
             label="Filters"
@@ -603,21 +680,24 @@ export default function LibraryScreen() {
         <View style={{ flex: 1 }}>
           <CompactControlPill
             label="Sort"
-            detail={sortLabel}
+            detail={isCompactWidth ? undefined : sortLabel}
             icon="arrow-down"
             fullWidth
             isActive={sort !== 'newest'}
             onPress={() => setIsSortSheetVisible(true)}
           />
         </View>
-        <CompactControlPill
-          label="Favorites"
-          icon="heart"
-          iconOnly
-          isActive={favoritesOnly}
-          onPress={() => setFavoritesOnly((current) => !current)}
-          accessibilityLabel={favoritesOnly ? 'Disable favorites filter' : 'Enable favorites filter'}
-        />
+        <View style={isCompactWidth ? { alignSelf: 'stretch' } : undefined}>
+          <CompactControlPill
+            label="Favorites"
+            icon="heart"
+            iconOnly={!isCompactWidth}
+            fullWidth={isCompactWidth}
+            isActive={favoritesOnly}
+            onPress={() => setFavoritesOnly((current) => !current)}
+            accessibilityLabel={favoritesOnly ? 'Disable favorites filter' : 'Enable favorites filter'}
+          />
+        </View>
       </View>
 
       {activeFilterCount > 0 ? (
@@ -637,9 +717,9 @@ export default function LibraryScreen() {
       ) : null}
 
       <View style={{ marginBottom: theme.spacing.md }}>
-        <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{visibleSnaps.length} of {snaps.length} snaps</Text>
+        <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{resultCopy}</Text>
         {activeFilterCount > 0 ? (
-          <Text style={textStyles.bodySm}>{activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied</Text>
+          <Text style={textStyles.bodySm}>{activeFilterCount} active refinement{activeFilterCount === 1 ? '' : 's'}</Text>
         ) : null}
       </View>
 
@@ -655,14 +735,14 @@ export default function LibraryScreen() {
       {!isLoadingSnaps && snaps.length === 0 ? (
         <EmptyState
           title="Your Library is still empty"
-          description={__DEV__ ? 'Seed sample data from Settings to test full-account search and filtering.' : 'New Snaps from the Drop and your Shelves will appear here automatically.'}
+          description={__DEV__ ? 'Seed sample data from Settings to test full-account search and filtering.' : 'New Snaps from The Tray and your Shelves will appear here automatically.'}
         />
       ) : null}
 
       {!isLoadingSnaps && snaps.length > 0 && visibleSnaps.length === 0 ? (
         <EmptyState
-          title="No matching Snaps"
-          description="Try a different shelf, label, source, date range, or clear a few filters."
+          title={noResultsCopy.title}
+          description={noResultsCopy.description}
         />
       ) : null}
 
@@ -674,7 +754,7 @@ export default function LibraryScreen() {
           renderItem={({ item }) => (
             <LibrarySnapCard
               snap={item}
-              shelfLabel={item.shelfId ? shelfNamesById.get(item.shelfId) ?? 'Shelf' : 'Drop'}
+              shelfLabel={item.shelfId ? shelfNamesById.get(item.shelfId) ?? 'Shelf' : 'The Tray'}
               isBusy={busySnapId === item.id}
               onOpenContext={() => openSnapContext(item)}
               onOpenActions={() => setActionSnap(item)}
@@ -729,8 +809,8 @@ export default function LibraryScreen() {
         snapTitle={moveSnap ? getSnapHeadline(moveSnap) : undefined}
         title="Move Snap"
         description={moveSnap ? `Choose a new destination for "${getSnapHeadline(moveSnap)}".` : undefined}
-        includeDropOption
-        dropLabel="Unsorted Drop"
+        includeTrayOption
+        trayLabel="The Tray"
         isSubmitting={busySnapId === moveSnap?.id && busyAction === 'move'}
         onClose={() => setMoveSnap(null)}
         onSelect={(destination) => {

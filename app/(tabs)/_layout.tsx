@@ -16,7 +16,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="board" options={{ title: 'Board' }} />
       <Tabs.Screen name="library" options={{ title: 'Library' }} />
-      <Tabs.Screen name="drop" options={{ title: 'Drop' }} />
+      <Tabs.Screen name="tray" options={{ title: 'The Tray' }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
     </Tabs>
   );

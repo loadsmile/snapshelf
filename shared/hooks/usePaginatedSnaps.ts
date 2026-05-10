@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { listDropSnaps, listShelfSnaps, subscribeToDropSnaps, subscribeToShelfSnaps, type SnapCursor } from '@/features/snaps/api';
+import { listShelfSnaps, listTraySnaps, subscribeToShelfSnaps, subscribeToTraySnaps, type SnapCursor } from '@/features/snaps/api';
 import { appendUniqueSnaps, mergeFirstPageSnaps } from '@/features/snaps/pagination';
 import type { Snap } from '@/features/snaps/types';
 
@@ -15,6 +15,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
 
   const cursorRef = useRef<SnapCursor | null>(null);
   const hasLoadedAdditionalPagesRef = useRef(false);
+  const firstPageIdsRef = useRef<Set<string> | undefined>(undefined);
 
   useEffect(() => {
     if (!userId) {
@@ -25,6 +26,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setError(null);
       cursorRef.current = null;
       hasLoadedAdditionalPagesRef.current = false;
+      firstPageIdsRef.current = undefined;
       return;
     }
 
@@ -36,6 +38,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setError(null);
       cursorRef.current = null;
       hasLoadedAdditionalPagesRef.current = false;
+      firstPageIdsRef.current = undefined;
       return;
     }
 
@@ -46,9 +49,11 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
     setError(null);
     cursorRef.current = null;
     hasLoadedAdditionalPagesRef.current = false;
+    firstPageIdsRef.current = undefined;
 
     const handleUpdate = (nextSnaps: Snap[], nextCursor: SnapCursor | null) => {
-      setSnaps((current) => mergeFirstPageSnaps(current, nextSnaps));
+      setSnaps((current) => mergeFirstPageSnaps(current, nextSnaps, firstPageIdsRef.current));
+      firstPageIdsRef.current = new Set(nextSnaps.map((snap) => snap.id));
 
       if (!hasLoadedAdditionalPagesRef.current) {
         cursorRef.current = nextCursor;
@@ -65,7 +70,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setLoadingMore(false);
     };
 
-    const unsubscribe = shelfId === null ? subscribeToDropSnaps(userId, handleUpdate, handleError, undefined, PAGE_SIZE) : subscribeToShelfSnaps(userId, shelfId, handleUpdate, handleError, undefined, PAGE_SIZE);
+    const unsubscribe = shelfId === null ? subscribeToTraySnaps(userId, handleUpdate, handleError, undefined, PAGE_SIZE) : subscribeToShelfSnaps(userId, shelfId, handleUpdate, handleError, undefined, PAGE_SIZE);
 
     return unsubscribe;
   }, [shelfId, userId]);
@@ -78,7 +83,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
     setLoadingMore(true);
 
     try {
-      const nextPage = shelfId === null ? await listDropSnaps(userId, cursorRef.current, PAGE_SIZE) : await listShelfSnaps(userId, shelfId, cursorRef.current, PAGE_SIZE);
+      const nextPage = shelfId === null ? await listTraySnaps(userId, cursorRef.current, PAGE_SIZE) : await listShelfSnaps(userId, shelfId, cursorRef.current, PAGE_SIZE);
 
       hasLoadedAdditionalPagesRef.current = true;
       cursorRef.current = nextPage.cursor ?? cursorRef.current;

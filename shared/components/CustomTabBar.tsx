@@ -4,7 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BoardIcon } from '@/shared/components/icons/BoardIcon';
-import { DropIcon } from '@/shared/components/icons/DropIcon';
+import { TrayIcon } from '@/shared/components/icons/TrayIcon';
 import { theme } from '@/shared/theme';
 
 function renderIcon(routeName: string, color: string, focused: boolean) {
@@ -16,8 +16,8 @@ function renderIcon(routeName: string, color: string, focused: boolean) {
     return <Feather name="book-open" size={24} color={color} />;
   }
 
-  if (routeName === 'drop') {
-    return <DropIcon color={color} focused={focused} />;
+  if (routeName === 'tray') {
+    return <TrayIcon color={color} focused={focused} />;
   }
 
   return <Feather name="settings" size={24} color={color} />;

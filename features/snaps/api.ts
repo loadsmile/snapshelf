@@ -225,12 +225,12 @@ export function subscribeToAllSnaps(userId: string, callback: (snaps: Snap[]) =>
   );
 }
 
-export async function listDropSnaps(userId: string, cursor?: SnapCursor | null, pageSize: number = DEFAULT_SNAP_PAGE_SIZE): Promise<SnapPageResult> {
+export async function listTraySnaps(userId: string, cursor?: SnapCursor | null, pageSize: number = DEFAULT_SNAP_PAGE_SIZE): Promise<SnapPageResult> {
   const snapshot = await getDocs(buildScopedSnapsQuery(userId, null, cursor, pageSize));
   return mapSnapPage(snapshot);
 }
 
-export function subscribeToDropSnaps(
+export function subscribeToTraySnaps(
   userId: string,
   callback: (snaps: Snap[], cursor: SnapCursor | null) => void,
   onError?: (error: Error) => void,

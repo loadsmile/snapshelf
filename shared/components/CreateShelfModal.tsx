@@ -64,12 +64,12 @@ export function CreateShelfModal({ visible, shelves = [], isSubmitting = false, 
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Shelf</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this Shelf a name and place it onto the Board.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this collection a name, then decide whether it should start from another Shelf on the Board.</Text>
 
             <FormField label="Shelf Name" value={name} onChangeText={setName} placeholder="Weekend Stays" autoCapitalize="words" />
 
             <View style={{ marginBottom: theme.spacing.md }}>
-              <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Thread To</Text>
+              <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Anchor Shelf</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
                 <PillButton
                   label="No Thread Yet"
@@ -89,7 +89,7 @@ export function CreateShelfModal({ visible, shelves = [], isSubmitting = false, 
                   />
                 ))}
               </ScrollView>
-              <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{anchorLabel}</Text>
+              <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{anchorShelfId ? `Thread this Shelf from ${anchorLabel}.` : 'Keep this Shelf independent for now.'}</Text>
             </View>
 
             {localError || error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{localError ?? error}</Text> : null}

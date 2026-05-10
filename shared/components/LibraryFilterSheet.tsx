@@ -31,7 +31,7 @@ type LibraryFilterSheetProps = {
   dateOptions: DateOption[];
   statusOptions: StatusOption[];
   selectedStatus: SnapLibraryStatus;
-  selectedShelfId: 'all' | 'drop' | string;
+  selectedShelfId: 'all' | 'tray' | string;
   selectedSource: SnapSource | 'all';
   selectedLabel: string | 'all';
   selectedDateRange: SnapLibraryDateRange;
@@ -39,16 +39,17 @@ type LibraryFilterSheetProps = {
   onClose: () => void;
   onReset: () => void;
   onSelectStatus: (value: SnapLibraryStatus) => void;
-  onSelectShelf: (value: 'all' | 'drop' | string) => void;
+  onSelectShelf: (value: 'all' | 'tray' | string) => void;
   onSelectSource: (value: SnapSource | 'all') => void;
   onSelectLabel: (value: string | 'all') => void;
   onSelectDateRange: (value: SnapLibraryDateRange) => void;
 };
 
-function SheetSection({ title, children }: { title: string; children: ReactNode }) {
+function SheetSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <View style={{ marginBottom: theme.spacing.lg }}>
-      <Text style={[textStyles.bodySm, { color: theme.colors.textMuted, marginBottom: theme.spacing.sm }]}>{title}</Text>
+    <View style={{ marginBottom: theme.spacing.md }}>
+      <Text style={[textStyles.bodySm, { color: theme.colors.text, marginBottom: hint ? 2 : theme.spacing.sm }]}>{title}</Text>
+      {hint ? <Text style={[textStyles.bodySm, { marginBottom: theme.spacing.sm }]}>{hint}</Text> : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>{children}</View>
     </View>
   );
@@ -149,26 +150,26 @@ export function LibraryFilterSheet({
           </View>
 
           <View style={{ paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md }}>
-            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Filters</Text>
-            <Text style={textStyles.bodySm}>Refine status, shelves, sources, labels, and saved dates without crowding the main view.</Text>
+            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Refine Library</Text>
+            <Text style={textStyles.bodySm}>Pick a few quick signals. Your Library updates as you choose.</Text>
           </View>
 
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{
               paddingHorizontal: theme.spacing.lg,
-              paddingBottom: theme.spacing.lg,
+              paddingBottom: theme.spacing.md,
             }}
           >
-            <SheetSection title="Status">
+            <SheetSection title="Show">
               {statusOptions.map((option) => (
                 <SheetOptionPill key={option.value} label={option.label} isActive={selectedStatus === option.value} onPress={() => onSelectStatus(option.value)} />
               ))}
             </SheetSection>
 
-            <SheetSection title="Shelf">
+            <SheetSection title="Where it lives">
               <SheetOptionPill label="All Shelves" isActive={selectedShelfId === 'all'} onPress={() => onSelectShelf('all')} />
-              <SheetOptionPill label="Drop" isActive={selectedShelfId === 'drop'} onPress={() => onSelectShelf('drop')} />
+              <SheetOptionPill label="The Tray" isActive={selectedShelfId === 'tray'} onPress={() => onSelectShelf('tray')} />
               {shelves.map((shelf) => (
                 <SheetOptionPill key={shelf.id} label={shelf.name} isActive={selectedShelfId === shelf.id} onPress={() => onSelectShelf(shelf.id)} />
               ))}
@@ -180,16 +181,14 @@ export function LibraryFilterSheet({
               ))}
             </SheetSection>
 
-            <SheetSection title="Label">
+            <SheetSection title="Label" hint={resolvedLabelOptions.length === 0 ? 'Labels will appear here after you add them to Snaps.' : undefined}>
               <SheetOptionPill label="All Labels" isActive={selectedLabel === 'all'} onPress={() => onSelectLabel('all')} />
               {resolvedLabelOptions.map((label) => (
                 <SheetOptionPill key={label} label={label} isActive={selectedLabel === label} onPress={() => onSelectLabel(label)} />
               ))}
             </SheetSection>
 
-            {resolvedLabelOptions.length === 0 ? <Text style={[textStyles.bodySm, { marginTop: -theme.spacing.sm, marginBottom: theme.spacing.lg }]}>No labels yet.</Text> : null}
-
-            <SheetSection title="Date">
+            <SheetSection title="Saved date">
               {dateOptions.map((option) => (
                 <SheetOptionPill
                   key={option.value}
@@ -226,7 +225,7 @@ export function LibraryFilterSheet({
                 opacity: hasAdvancedFilters ? 1 : 0.58,
               }}
             >
-              <Text style={[textStyles.button, { color: theme.colors.text }]}>Reset</Text>
+              <Text style={[textStyles.button, { color: theme.colors.text }]}>Clear</Text>
             </Pressable>
 
             <Pressable
@@ -244,9 +243,7 @@ export function LibraryFilterSheet({
                 theme.shadows.button,
               ]}
             >
-              <Text style={[textStyles.button, { color: theme.colors.surface }]}>
-                Show {visibleSnapCount} Snap{visibleSnapCount === 1 ? '' : 's'}
-              </Text>
+              <Text style={[textStyles.button, { color: theme.colors.surface }]}>Show {visibleSnapCount} Snap{visibleSnapCount === 1 ? '' : 's'}</Text>
             </Pressable>
           </View>
         </Pressable>
