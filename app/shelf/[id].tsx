@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
-import { formatCapturedAt, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
-import { deleteSnap, moveSnapToShelf } from '@/features/snaps/api';
-import type { Snap } from '@/features/snaps/types';
-import { deleteShelf, getShelf, subscribeToShelves } from '@/features/shelves/api';
+import { deleteImageLocally } from '@/features/images/local';
+import { resolveLocalImageUri } from '@/features/images/resolve';
+import { formatCapturedAt, getShelfCoverSnap, getShelfPalette, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
+import { deleteSnap, moveSnapToShelf, setSnapArchived, setSnapFavorite, updateSnapDetails } from '@/features/snaps/api';
+import type { Snap, UpdateSnapInput } from '@/features/snaps/types';
+import { deleteShelf, getShelf, saveShelfCoverImageLocally, subscribeToShelves, updateShelfCover } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { setShelfAnchor, subscribeToThreads } from '@/features/threads/api';
 import type { ShelfThread } from '@/features/threads/types';
@@ -18,8 +20,10 @@ import { EmptyState } from '@/shared/components/EmptyState';
 import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
+import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
+import { ShelfCoverModal } from '@/shared/components/ShelfCoverModal';
 import { usePaginatedSnaps } from '@/shared/hooks/usePaginatedSnaps';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
@@ -118,12 +122,19 @@ export default function ShelfViewScreen() {
   const [isEditThreadVisible, setIsEditThreadVisible] = useState(false);
   const [isSavingThread, setIsSavingThread] = useState(false);
   const [actionSnap, setActionSnap] = useState<Snap | null>(null);
+  const [detailSnap, setDetailSnap] = useState<Snap | null>(null);
   const [isShelfMenuVisible, setIsShelfMenuVisible] = useState(false);
+  const [isShelfCoverVisible, setIsShelfCoverVisible] = useState(false);
+  const [isSavingShelfCover, setIsSavingShelfCover] = useState(false);
+  const [shelfCoverError, setShelfCoverError] = useState<string | null>(null);
   const [movingSnapId, setMovingSnapId] = useState<string | null>(null);
   const [deletingSnapId, setDeletingSnapId] = useState<string | null>(null);
+  const [savingSnapId, setSavingSnapId] = useState<string | null>(null);
+  const [favoriteSnapId, setFavoriteSnapId] = useState<string | null>(null);
+  const [archivingSnapId, setArchivingSnapId] = useState<string | null>(null);
   const [isDeletingShelf, setIsDeletingShelf] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
-  const { error: snapsError, loadMore, loading: isLoadingSnaps, loadingMore, snaps } = usePaginatedSnaps(user?.id, id ?? null);
+  const { error: snapsError, hasMore, loadMore, loading: isLoadingSnaps, loadingMore, snaps } = usePaginatedSnaps(user?.id, id ?? null);
 
   useEffect(() => {
     let isActive = true;
@@ -198,6 +209,17 @@ export default function ShelfViewScreen() {
     return unsubscribe;
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    const nextShelf = shelves.find((entry) => entry.id === id);
+    if (nextShelf) {
+      setShelf(nextShelf);
+    }
+  }, [id, shelves]);
+
   const title = useMemo(() => shelf?.name ?? 'Shelf View', [shelf?.name]);
   const currentThread = useMemo(() => threads.find((thread) => thread.toShelfId === id) ?? null, [id, threads]);
   const anchorShelf = useMemo(
@@ -205,6 +227,8 @@ export default function ShelfViewScreen() {
     [currentThread?.fromShelfId, shelves],
   );
   const latestSnap = useMemo(() => getLatestSnap(snaps), [snaps]);
+  const coverSnap = useMemo(() => (shelf ? getShelfCoverSnap(shelf, snaps) : null), [shelf, snaps]);
+  const coverImageUri = useMemo(() => resolveLocalImageUri(shelf?.coverLocalPath ?? null), [shelf?.coverLocalPath]);
   const favoriteCount = useMemo(() => snaps.filter((snap) => snap.isFavorite).length, [snaps]);
   const shelfHighlights = useMemo(() => getShelfHighlights(snaps), [snaps]);
   const activeError = error ?? snapsError;
@@ -223,6 +247,66 @@ export default function ShelfViewScreen() {
       setThreadError(nextError instanceof Error ? nextError.message : 'Unable to update this thread right now.');
     } finally {
       setIsSavingThread(false);
+    }
+  }
+
+  async function handleSelectManualShelfCover(uri: string) {
+    if (!user?.id || !id) {
+      return;
+    }
+
+    try {
+      setIsSavingShelfCover(true);
+      setShelfCoverError(null);
+      const coverLocalPath = await saveShelfCoverImageLocally(uri);
+      try {
+        await updateShelfCover(user.id, id, { coverSnapId: null, coverLocalPath });
+      } catch (nextError) {
+        await deleteImageLocally(coverLocalPath);
+        throw nextError;
+      }
+      setShelf((current) => (current ? { ...current, coverSnapId: null, coverLocalPath } : current));
+      setIsShelfCoverVisible(false);
+    } catch (nextError) {
+      setShelfCoverError(nextError instanceof Error ? nextError.message : 'Unable to save this Shelf cover right now.');
+    } finally {
+      setIsSavingShelfCover(false);
+    }
+  }
+
+  async function handleSelectSnapShelfCover(snap: Snap) {
+    if (!user?.id || !id) {
+      return;
+    }
+
+    try {
+      setIsSavingShelfCover(true);
+      setShelfCoverError(null);
+      await updateShelfCover(user.id, id, { coverSnapId: snap.id, coverLocalPath: null });
+      setShelf((current) => (current ? { ...current, coverSnapId: snap.id, coverLocalPath: null } : current));
+      setIsShelfCoverVisible(false);
+    } catch (nextError) {
+      setShelfCoverError(nextError instanceof Error ? nextError.message : 'Unable to save this Shelf cover right now.');
+    } finally {
+      setIsSavingShelfCover(false);
+    }
+  }
+
+  async function handleClearShelfCover() {
+    if (!user?.id || !id) {
+      return;
+    }
+
+    try {
+      setIsSavingShelfCover(true);
+      setShelfCoverError(null);
+      await updateShelfCover(user.id, id, { coverSnapId: null, coverLocalPath: null });
+      setShelf((current) => (current ? { ...current, coverSnapId: null, coverLocalPath: null } : current));
+      setIsShelfCoverVisible(false);
+    } catch (nextError) {
+      setShelfCoverError(nextError instanceof Error ? nextError.message : 'Unable to clear this Shelf cover right now.');
+    } finally {
+      setIsSavingShelfCover(false);
     }
   }
 
@@ -256,6 +340,57 @@ export default function ShelfViewScreen() {
       setError(nextError instanceof Error ? nextError.message : 'Unable to move this Snap to The Tray right now.');
     } finally {
       setMovingSnapId(null);
+    }
+  }
+
+  async function handleSaveSnapDetails(snap: Snap, input: UpdateSnapInput) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setSavingSnapId(snap.id);
+      setError(null);
+      await updateSnapDetails(user.id, snap.id, input);
+      setDetailSnap(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to save this Snap right now.');
+    } finally {
+      setSavingSnapId(null);
+    }
+  }
+
+  async function handleToggleFavorite(snap: Snap) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setFavoriteSnapId(snap.id);
+      setError(null);
+      await setSnapFavorite(user.id, snap.id, !snap.isFavorite);
+      setActionSnap(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
+    } finally {
+      setFavoriteSnapId(null);
+    }
+  }
+
+  async function handleToggleArchived(snap: Snap) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setArchivingSnapId(snap.id);
+      setError(null);
+      await setSnapArchived(user.id, snap.id, !snap.isArchived);
+      setActionSnap(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
+    } finally {
+      setArchivingSnapId(null);
     }
   }
 
@@ -354,6 +489,23 @@ export default function ShelfViewScreen() {
         <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelf Summary</Text>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
         <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Shelf is a curated collection. Revisit it to refine the Snaps, labels, and thread that make this idea easy to find later.</Text>
+        <SnapArtwork
+          snap={coverSnap}
+          imageUri={coverImageUri}
+          fallbackColors={shelf ? getShelfPalette(shelf.name) : ['#EFE9DD', '#DDE4D5']}
+          showChildrenOnFallback
+          style={{
+            height: 170,
+            borderRadius: theme.radii.lg,
+            marginBottom: theme.spacing.lg,
+            padding: theme.spacing.lg,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <View style={{ alignSelf: 'flex-start', borderRadius: theme.radii.pill, backgroundColor: 'rgba(255,255,255,0.82)', paddingHorizontal: 12, paddingVertical: 8 }}>
+            <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{coverImageUri ? 'Manual cover' : coverSnap ? 'Snap cover' : 'No cover set'}</Text>
+          </View>
+        </SnapArtwork>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
           <ShelfSummaryMetric label="Snaps" value={isLoadingSnaps ? '...' : snaps.length} />
           <ShelfSummaryMetric label="Favorites" value={favoriteCount} />
@@ -366,7 +518,10 @@ export default function ShelfViewScreen() {
             ))}
           </View>
         ) : null}
-        <PillButton label="+ Snap It" icon="plus" onPress={() => setIsCreateSnapVisible(true)} fullWidth disabled={isDeletingShelf} />
+        <View style={{ gap: theme.spacing.sm }}>
+          <PillButton label="Change Cover" icon="image" variant="secondary" onPress={() => setIsShelfCoverVisible(true)} fullWidth disabled={isDeletingShelf || !shelf} />
+          <PillButton label="+ Snap It" icon="plus" onPress={() => setIsCreateSnapVisible(true)} fullWidth disabled={isDeletingShelf} />
+        </View>
       </SurfaceCard>
 
       <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
@@ -412,7 +567,8 @@ export default function ShelfViewScreen() {
           const isMovingSnap = movingSnapId === snap.id;
 
           return (
-            <SurfaceCard key={snap.id} style={{ padding: theme.spacing.md }}>
+            <Pressable key={snap.id} onPress={() => setDetailSnap(snap)}>
+              <SurfaceCard style={{ padding: theme.spacing.md }}>
               <SnapPreview colors={colors} snap={snap} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.sm }}>
                 <SectionLabel label={getSnapSourceLabel(snap.source)} />
@@ -422,8 +578,11 @@ export default function ShelfViewScreen() {
                     <ActivityIndicator size="small" color={theme.colors.primary} />
                   ) : (
                     <Pressable
-                      onPress={() => setActionSnap(snap)}
-                      disabled={isDeletingShelf || deletingSnapId !== null || movingSnapId !== null}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        setActionSnap(snap);
+                      }}
+                      disabled={isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || savingSnapId !== null || favoriteSnapId !== null || archivingSnapId !== null}
                       hitSlop={10}
                     >
                       <Feather name="more-vertical" size={18} color={theme.colors.textMuted} />
@@ -443,7 +602,8 @@ export default function ShelfViewScreen() {
                   ))}
                 </View>
               ) : null}
-            </SurfaceCard>
+              </SurfaceCard>
+            </Pressable>
           );
         })}
       </View>
@@ -474,6 +634,34 @@ export default function ShelfViewScreen() {
           actionSnap
             ? [
                 {
+                  label: 'Edit Details',
+                  icon: 'edit-3',
+                  disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || savingSnapId !== null,
+                  loading: savingSnapId === actionSnap.id,
+                  onPress: () => {
+                    setDetailSnap(actionSnap);
+                    setActionSnap(null);
+                  },
+                },
+                {
+                  label: actionSnap.isFavorite ? 'Remove Favorite' : 'Favorite Snap',
+                  icon: actionSnap.isFavorite ? 'heart' : 'star',
+                  disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || favoriteSnapId !== null,
+                  loading: favoriteSnapId === actionSnap.id,
+                  onPress: () => {
+                    void handleToggleFavorite(actionSnap);
+                  },
+                },
+                {
+                  label: actionSnap.isArchived ? 'Restore to Active' : 'Archive Snap',
+                  icon: actionSnap.isArchived ? 'rotate-ccw' : 'archive',
+                  disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || archivingSnapId !== null,
+                  loading: archivingSnapId === actionSnap.id,
+                  onPress: () => {
+                    void handleToggleArchived(actionSnap);
+                  },
+                },
+                {
                   label: 'Move to The Tray',
                   icon: 'arrow-down',
                   disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null,
@@ -503,6 +691,16 @@ export default function ShelfViewScreen() {
           shelf
             ? [
                 {
+                  label: 'Change Cover',
+                  icon: 'image',
+                  disabled: isDeletingShelf || isSavingShelfCover,
+                  loading: isSavingShelfCover,
+                  onPress: () => {
+                    setIsShelfMenuVisible(false);
+                    setIsShelfCoverVisible(true);
+                  },
+                },
+                {
                   label: 'Edit Thread',
                   icon: 'link',
                   disabled: isDeletingShelf,
@@ -522,6 +720,42 @@ export default function ShelfViewScreen() {
             : []
         }
         onClose={() => setIsShelfMenuVisible(false)}
+      />
+
+      <SnapDetailModal
+        visible={detailSnap !== null}
+        snap={detailSnap}
+        shelves={shelves}
+        isSaving={savingSnapId === detailSnap?.id}
+        error={activeError}
+        onClose={() => setDetailSnap(null)}
+        onSave={handleSaveSnapDetails}
+      />
+
+      <ShelfCoverModal
+        visible={isShelfCoverVisible}
+        shelf={shelf}
+        snaps={snaps}
+        isSubmitting={isSavingShelfCover}
+        hasMoreSnaps={hasMore}
+        isLoadingMoreSnaps={loadingMore}
+        error={shelfCoverError}
+        onClose={() => {
+          setIsShelfCoverVisible(false);
+          setShelfCoverError(null);
+        }}
+        onSelectManualImage={(uri) => {
+          void handleSelectManualShelfCover(uri);
+        }}
+        onSelectSnap={(snap) => {
+          void handleSelectSnapShelfCover(snap);
+        }}
+        onClearCover={() => {
+          void handleClearShelfCover();
+        }}
+        onLoadMoreSnaps={() => {
+          void loadMore();
+        }}
       />
 
       <EditThreadModal

@@ -19,7 +19,7 @@ type SnapArtworkProps = {
 };
 
 export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false }: SnapArtworkProps) {
-  const resolvedImageUri = useMemo(() => (snap ? resolveSnapImageUri(snap) : imageUri), [imageUri, snap]);
+  const resolvedImageUri = useMemo(() => imageUri ?? (snap ? resolveSnapImageUri(snap) : null), [imageUri, snap]);
   const [isBroken, setIsBroken] = useState(false);
   const shouldShowFallback = !resolvedImageUri || isBroken;
 

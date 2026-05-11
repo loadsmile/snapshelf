@@ -17,17 +17,12 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import * as FileSystem from 'expo-file-system/legacy';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import type { Action } from 'expo-image-manipulator';
-import { Image } from 'react-native';
 
-import type { CreateSnapInput, Snap } from '@/features/snaps/types';
+import type { CreateSnapInput, Snap, UpdateSnapInput } from '@/features/snaps/types';
 import { clearShelfCoverSnap, touchShelf } from '@/features/shelves/api';
+import { deleteImageLocally, saveImageLocally } from '@/features/images/local';
 import { requireDb } from '@/services/firebase';
 
-const SNAP_IMAGE_MAX_LONG_EDGE = 1800;
-const SNAP_IMAGE_COMPRESSION = 0.78;
 const DEFAULT_SNAP_PAGE_SIZE = 20;
 
 export type SnapCursor = QueryDocumentSnapshot<unknown>;
@@ -36,69 +31,6 @@ type SnapPageResult = {
   cursor: SnapCursor | null;
   snaps: Snap[];
 };
-
-function getImageExtension(uri: string) {
-  const extensionMatch = uri.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-  return extensionMatch?.[1]?.toLowerCase() ?? 'jpg';
-}
-
-async function getImageDimensions(uri: string) {
-  return await new Promise<{ width: number; height: number } | null>((resolve) => {
-    Image.getSize(
-      uri,
-      (width, height) => resolve({ width, height }),
-      () => resolve(null),
-    );
-  });
-}
-
-function getDocumentDirectory() {
-  if (!FileSystem.documentDirectory) {
-    throw new Error('Local file storage is unavailable on this device.');
-  }
-
-  return FileSystem.documentDirectory;
-}
-
-async function compressSnapImage(uri: string) {
-  try {
-    const dimensions = await getImageDimensions(uri);
-    const actions: Action[] = [];
-
-    if (dimensions) {
-      const longestEdge = Math.max(dimensions.width, dimensions.height);
-
-      if (longestEdge > SNAP_IMAGE_MAX_LONG_EDGE) {
-        actions.push(
-          dimensions.width >= dimensions.height
-            ? { resize: { width: SNAP_IMAGE_MAX_LONG_EDGE } }
-            : { resize: { height: SNAP_IMAGE_MAX_LONG_EDGE } },
-        );
-      }
-    }
-
-    const processed = await manipulateAsync(uri, actions, {
-      compress: SNAP_IMAGE_COMPRESSION,
-      format: SaveFormat.JPEG,
-    });
-
-    return {
-      contentType: 'image/jpeg',
-      extension: 'jpg',
-      uri: processed.uri,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.warn('[compressSnapImage] Falling back to original asset after image compression failed.', error);
-    }
-
-    return {
-      contentType: null,
-      extension: getImageExtension(uri),
-      uri,
-    };
-  }
-}
 
 function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : null;
@@ -195,16 +127,7 @@ export async function createSnap(userId: string, input: CreateSnapInput): Promis
 }
 
 export async function saveSnapImageLocally(uri: string): Promise<string> {
-  const compressedImage = await compressSnapImage(uri);
-  const documentDirectory = getDocumentDirectory();
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${compressedImage.extension}`;
-  const relativePath = `snaps/${filename}`;
-  const fullPath = `${documentDirectory}${relativePath}`;
-
-  await FileSystem.makeDirectoryAsync(`${documentDirectory}snaps/`, { intermediates: true });
-  await FileSystem.copyAsync({ from: compressedImage.uri, to: fullPath });
-
-  return relativePath;
+  return saveImageLocally(uri, 'snaps');
 }
 
 export async function listAllSnaps(userId: string): Promise<Snap[]> {
@@ -291,6 +214,35 @@ export async function moveSnapToShelf(userId: string, snapId: string, shelfId: s
   }
 }
 
+export async function updateSnapDetails(userId: string, snapId: string, input: UpdateSnapInput): Promise<void> {
+  const db = requireDb();
+  const updates: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+  };
+
+  if ('shelfId' in input) {
+    updates.shelfId = input.shelfId ?? null;
+  }
+
+  if ('title' in input) {
+    updates.title = input.title ?? null;
+  }
+
+  if ('thought' in input) {
+    updates.thought = input.thought ?? null;
+  }
+
+  if ('labels' in input) {
+    updates.labels = input.labels ?? [];
+  }
+
+  await updateDoc(doc(db, 'users', userId, 'snaps', snapId), updates);
+
+  if (input.shelfId) {
+    await touchShelf(userId, input.shelfId, snapId);
+  }
+}
+
 export async function setSnapFavorite(userId: string, snapId: string, isFavorite: boolean): Promise<void> {
   const db = requireDb();
 
@@ -324,6 +276,6 @@ export async function deleteSnap(userId: string, snapId: string, localPath: stri
   }
 
   if (localPath) {
-    await FileSystem.deleteAsync(`${getDocumentDirectory()}${localPath}`, { idempotent: true });
+    await deleteImageLocally(localPath);
   }
 }

@@ -1,7 +1,8 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore';
 
+import { deleteImageLocally, saveImageLocally } from '@/features/images/local';
 import { deleteThreadsForShelf } from '@/features/threads/api';
-import type { CreateShelfInput, Shelf, ShelfBoardVariant } from '@/features/shelves/types';
+import type { CreateShelfInput, Shelf, ShelfBoardVariant, UpdateShelfCoverInput } from '@/features/shelves/types';
 import { requireDb } from '@/services/firebase';
 
 const boardLayoutPresets: Array<{ boardX: number; boardY: number; boardVariant: ShelfBoardVariant }> = [
@@ -46,6 +47,7 @@ function mapShelf(id: string, data: Record<string, unknown>): Shelf {
     id,
     name: typeof data.name === 'string' ? data.name : 'Untitled Shelf',
     coverSnapId: typeof data.coverSnapId === 'string' ? data.coverSnapId : null,
+    coverLocalPath: typeof data.coverLocalPath === 'string' ? data.coverLocalPath : null,
     boardX: typeof data.boardX === 'number' ? data.boardX : null,
     boardY: typeof data.boardY === 'number' ? data.boardY : null,
     boardVariant: isShelfBoardVariant(data.boardVariant) ? data.boardVariant : null,
@@ -60,6 +62,7 @@ export async function createShelf(userId: string, input: CreateShelfInput): Prom
   const created = await addDoc(collectionRef, {
     name: input.name,
     coverSnapId: input.coverSnapId ?? null,
+    coverLocalPath: input.coverLocalPath ?? null,
     boardX: input.boardX ?? null,
     boardY: input.boardY ?? null,
     boardVariant: input.boardVariant ?? null,
@@ -71,6 +74,7 @@ export async function createShelf(userId: string, input: CreateShelfInput): Prom
   return mapShelf(created.id, snapshot.data() ?? {
     name: input.name,
     coverSnapId: input.coverSnapId ?? null,
+    coverLocalPath: input.coverLocalPath ?? null,
     boardX: input.boardX ?? null,
     boardY: input.boardY ?? null,
     boardVariant: input.boardVariant ?? null,
@@ -165,6 +169,31 @@ export async function clearShelfCoverSnap(userId: string, shelfId: string, snapI
   );
 }
 
+export async function saveShelfCoverImageLocally(uri: string): Promise<string> {
+  return saveImageLocally(uri, 'shelf-covers');
+}
+
+export async function updateShelfCover(userId: string, shelfId: string, input: UpdateShelfCoverInput) {
+  const db = requireDb();
+  const shelfRef = doc(db, 'users', userId, 'shelves', shelfId);
+  const snapshot = await getDoc(shelfRef);
+  const previousCoverLocalPath = snapshot.exists() ? mapShelf(snapshot.id, snapshot.data()).coverLocalPath : null;
+
+  await setDoc(
+    shelfRef,
+    {
+      coverSnapId: input.coverSnapId,
+      coverLocalPath: input.coverLocalPath,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  if (previousCoverLocalPath && previousCoverLocalPath !== input.coverLocalPath) {
+    await deleteImageLocally(previousCoverLocalPath);
+  }
+}
+
 export async function updateShelfPosition(userId: string, shelfId: string, boardX: number, boardY: number) {
   const db = requireDb();
 
@@ -197,6 +226,8 @@ export async function bootstrapShelfPlacement(userId: string, shelfId: string, i
 
 export async function deleteShelf(userId: string, shelfId: string) {
   const db = requireDb();
+  const shelfSnapshot = await getDoc(doc(db, 'users', userId, 'shelves', shelfId));
+  const shelfCoverLocalPath = shelfSnapshot.exists() ? mapShelf(shelfSnapshot.id, shelfSnapshot.data()).coverLocalPath : null;
   const snapsSnapshot = await getDocs(query(collection(db, 'users', userId, 'snaps'), where('shelfId', '==', shelfId)));
 
   await Promise.all(
@@ -210,4 +241,5 @@ export async function deleteShelf(userId: string, shelfId: string) {
 
   await deleteThreadsForShelf(userId, shelfId);
   await deleteDoc(doc(db, 'users', userId, 'shelves', shelfId));
+  await deleteImageLocally(shelfCoverLocalPath);
 }

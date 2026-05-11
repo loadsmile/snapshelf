@@ -6,6 +6,7 @@ import { PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'reac
 
 import { useAuth } from '@/features/auth/useAuth';
 import { subscribeToAllSnaps } from '@/features/snaps/api';
+import { resolveLocalImageUri } from '@/features/images/resolve';
 import { formatCapturedAt, getShelfCoverSnap, getShelfPalette, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
 import { searchSnaps } from '@/features/snaps/search';
 import type { Snap } from '@/features/snaps/types';
@@ -23,6 +24,7 @@ import type { ShelfThread } from '@/features/threads/types';
 import { AppHeader } from '@/shared/components/AppHeader';
 import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
@@ -266,10 +268,11 @@ function renderThread(from: Point, to: Point, key: string) {
   );
 }
 
-function CircleVisual({ size, colors, snap }: { size: number; colors: [string, string]; snap: Snap | null }) {
+function CircleVisual({ size, colors, snap, imageUri }: { size: number; colors: [string, string]; snap: Snap | null; imageUri: string | null }) {
   return (
     <SnapArtwork
       snap={snap}
+      imageUri={imageUri}
       fallbackColors={colors}
       style={{
         width: size - 20,
@@ -310,10 +313,11 @@ function CircleVisual({ size, colors, snap }: { size: number; colors: [string, s
   );
 }
 
-function ArchVisual({ width, height, colors, snap }: { width: number; height: number; colors: [string, string]; snap: Snap | null }) {
+function ArchVisual({ width, height, colors, snap, imageUri }: { width: number; height: number; colors: [string, string]; snap: Snap | null; imageUri: string | null }) {
   return (
     <SnapArtwork
       snap={snap}
+      imageUri={imageUri}
       fallbackColors={colors}
       style={{
         width: width - 20,
@@ -337,10 +341,11 @@ function ArchVisual({ width, height, colors, snap }: { width: number; height: nu
   );
 }
 
-function TallVisual({ width, height, colors, snap }: { width: number; height: number; colors: [string, string]; snap: Snap | null }) {
+function TallVisual({ width, height, colors, snap, imageUri }: { width: number; height: number; colors: [string, string]; snap: Snap | null; imageUri: string | null }) {
   return (
     <SnapArtwork
       snap={snap}
+      imageUri={imageUri}
       fallbackColors={colors}
       style={{
         width: width - 20,
@@ -369,7 +374,7 @@ function TallVisual({ width, height, colors, snap }: { width: number; height: nu
   );
 }
 
-function PrimaryVisual({ size, colors, snap }: { size: number; colors: [string, string]; snap: Snap | null }) {
+function PrimaryVisual({ size, colors, snap, imageUri }: { size: number; colors: [string, string]; snap: Snap | null; imageUri: string | null }) {
   return (
     <View
       style={{
@@ -386,6 +391,7 @@ function PrimaryVisual({ size, colors, snap }: { size: number; colors: [string, 
     >
       <SnapArtwork
         snap={snap}
+        imageUri={imageUri}
         fallbackColors={colors}
         style={{
           flex: 1,
@@ -584,6 +590,7 @@ function BoardOrientationCard({
 function ShelfListItem({
   shelf,
   coverSnap,
+  coverImageUri,
   snapCount,
   latestSnap,
   anchorShelfName,
@@ -591,6 +598,7 @@ function ShelfListItem({
 }: {
   shelf: ReturnType<typeof getResolvedShelf>;
   coverSnap: Snap | null;
+  coverImageUri: string | null;
   snapCount: number;
   latestSnap: Snap | null;
   anchorShelfName: string | null;
@@ -608,6 +616,7 @@ function ShelfListItem({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
           <SnapArtwork
             snap={coverSnap}
+            imageUri={coverImageUri}
             fallbackColors={colors}
             style={{
               width: 88,
@@ -752,6 +761,7 @@ function DraggableShelfNode({
   shelf,
   scale,
   coverSnap,
+  coverImageUri,
   onPress,
   onDrag,
   onDragEnd,
@@ -759,6 +769,7 @@ function DraggableShelfNode({
   shelf: ReturnType<typeof getResolvedShelf>;
   scale: number;
   coverSnap: Snap | null;
+  coverImageUri: string | null;
   onPress: () => void;
   onDrag: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
@@ -814,7 +825,7 @@ function DraggableShelfNode({
       }}
     >
       <Pressable onPress={onPress} style={{ alignItems: 'center' }} hitSlop={18}>
-        {isPrimary ? <PrimaryVisual size={dimensions.width} colors={colors} snap={coverSnap} /> : null}
+        {isPrimary ? <PrimaryVisual size={dimensions.width} colors={colors} snap={coverSnap} imageUri={coverImageUri} /> : null}
 
         {!isPrimary ? (
           <View
@@ -832,11 +843,11 @@ function DraggableShelfNode({
               borderBottomRightRadius: shelf.boardVariant === 'arch' ? 18 : undefined,
             }}
           >
-            {shelf.boardVariant === 'arch' ? <ArchVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} /> : null}
+            {shelf.boardVariant === 'arch' ? <ArchVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} imageUri={coverImageUri} /> : null}
             {shelf.boardVariant === 'circle-large' || shelf.boardVariant === 'circle-small' || shelf.boardVariant === 'circle-medium' ? (
-              <CircleVisual size={dimensions.width} colors={colors} snap={coverSnap} />
+              <CircleVisual size={dimensions.width} colors={colors} snap={coverSnap} imageUri={coverImageUri} />
             ) : null}
-            {shelf.boardVariant === 'tall' ? <TallVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} /> : null}
+            {shelf.boardVariant === 'tall' ? <TallVisual width={dimensions.width} height={dimensions.height} colors={colors} snap={coverSnap} imageUri={coverImageUri} /> : null}
           </View>
         ) : null}
 
@@ -975,6 +986,10 @@ export default function BoardScreen() {
         }),
       ),
     [allSnaps, resolvedShelves],
+  );
+  const shelfCoverImageUris = useMemo(
+    () => new Map(resolvedShelves.map((shelf) => [shelf.id, resolveLocalImageUri(shelf.coverLocalPath)] as const)),
+    [resolvedShelves],
   );
   const snapCountsByShelfId = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1356,10 +1371,15 @@ export default function BoardScreen() {
       ) : null}
 
       {!trimmedSearchQuery && !isLoadingShelves && shelves.length === 0 ? (
-        <EmptyState
-          title="Your Board is waiting for its first Shelf"
-          description={__DEV__ ? 'Use the dev-only sample data action in Settings to create live Shelves, then arrange them here.' : 'Capture into The Tray, move keepers into Shelves, then arrange those Shelves here.'}
-        />
+        <View>
+          <EmptyState
+            title="Your Board is waiting for its first Shelf"
+            description={__DEV__ ? 'Create a Shelf here or use sample data in Settings, then arrange your system on the Board.' : 'Create a Shelf, then capture into The Tray and move keepers into your collections.'}
+          />
+          <View style={{ marginTop: theme.spacing.md }}>
+            <PillButton label="Create First Shelf" icon="plus" fullWidth onPress={() => setIsCreateShelfVisible(true)} disabled={!user?.id || isCreatingShelf} />
+          </View>
+        </View>
       ) : null}
 
       {trimmedSearchQuery ? (
@@ -1382,6 +1402,7 @@ export default function BoardScreen() {
                   key={shelf.id}
                   shelf={shelf}
                   coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                  coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                   snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
                   latestSnap={latestSnapsByShelfId.get(shelf.id) ?? null}
                   anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
@@ -1527,6 +1548,7 @@ export default function BoardScreen() {
                         shelf={shelf}
                         scale={boardTransform.scale}
                         coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                        coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                         onPress={() => router.push(`/shelf/${shelf.id}`)}
                         onDrag={(x, y) => {
                           handleShelfDrag(shelf.id, x, y);
@@ -1590,6 +1612,7 @@ export default function BoardScreen() {
                   <ShelfListItem
                     shelf={shelf}
                     coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
+                    coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                     snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
                     latestSnap={latestSnapsByShelfId.get(shelf.id) ?? null}
                     anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}

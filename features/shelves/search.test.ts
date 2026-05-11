@@ -8,6 +8,7 @@ function buildShelf(overrides: Partial<Shelf>): Shelf {
     id: overrides.id ?? 'shelf-1',
     name: overrides.name ?? 'Untitled Shelf',
     coverSnapId: overrides.coverSnapId ?? null,
+    coverLocalPath: overrides.coverLocalPath ?? null,
     boardX: overrides.boardX ?? null,
     boardY: overrides.boardY ?? null,
     boardVariant: overrides.boardVariant ?? null,

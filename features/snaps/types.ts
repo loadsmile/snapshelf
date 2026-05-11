@@ -32,3 +32,10 @@ export type CreateSnapInput = {
   archivedAt?: Date | null;
   capturedAt?: Date | null;
 };
+
+export type UpdateSnapInput = {
+  shelfId?: string | null;
+  title?: string | null;
+  thought?: string | null;
+  labels?: string[];
+};
