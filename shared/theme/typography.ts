@@ -3,18 +3,20 @@ import { StyleSheet } from 'react-native';
 import { colors } from './tokens';
 
 export const fonts = {
+  brand: 'CabinetGrotesk_800ExtraBold',
   regular: 'Manrope_400Regular',
   medium: 'Manrope_500Medium',
   semibold: 'Manrope_600SemiBold',
   bold: 'Manrope_700Bold',
+  extraBold: 'Manrope_800ExtraBold',
 };
 
 export const textStyles = StyleSheet.create({
   displaySm: {
-    fontFamily: fonts.bold,
+    fontFamily: fonts.extraBold,
     fontSize: 24,
     lineHeight: 32,
-    letterSpacing: -0.8,
+    letterSpacing: -1.25,
     color: colors.text,
   },
   titleLg: {
@@ -51,10 +53,10 @@ export const textStyles = StyleSheet.create({
     color: colors.primary,
   },
   brand: {
-    fontFamily: fonts.bold,
-    fontSize: 24,
-    lineHeight: 30,
-    letterSpacing: -0.9,
+    fontFamily: fonts.brand,
+    fontSize: 32,
+    lineHeight: 38,
+    letterSpacing: -1.35,
     color: colors.primary,
   },
   button: {

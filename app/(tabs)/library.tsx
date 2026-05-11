@@ -1,5 +1,4 @@
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
@@ -10,10 +9,11 @@ import {
   setSnapArchived,
   setSnapFavorite,
   subscribeToAllSnaps,
+  updateSnapDetails,
 } from '@/features/snaps/api';
 import { collectSnapLabels, filterLibrarySnaps, type SnapLibraryDateRange, type SnapLibrarySort, type SnapLibraryStatus } from '@/features/snaps/library';
 import { formatCapturedAt, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
-import type { Snap, SnapSource } from '@/features/snaps/types';
+import type { Snap, SnapSource, UpdateSnapInput } from '@/features/snaps/types';
 import { subscribeToShelves } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
@@ -23,6 +23,7 @@ import { LibraryFilterSheet } from '@/shared/components/LibraryFilterSheet';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { ShelfPickerModal } from '@/shared/components/ShelfPickerModal';
+import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { theme } from '@/shared/theme';
@@ -304,7 +305,6 @@ function LibrarySnapCard({
 }
 
 export default function LibraryScreen() {
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const { isConfigured, user } = useAuth();
   const [snaps, setSnaps] = useState<Snap[]>([]);
@@ -321,11 +321,12 @@ export default function LibraryScreen() {
   const [selectedDateRange, setSelectedDateRange] = useState<SnapLibraryDateRange>('any');
   const [sort, setSort] = useState<SnapLibrarySort>('newest');
   const [actionSnap, setActionSnap] = useState<Snap | null>(null);
+  const [detailSnap, setDetailSnap] = useState<Snap | null>(null);
   const [moveSnap, setMoveSnap] = useState<Snap | null>(null);
   const [isFilterSheetVisible, setIsFilterSheetVisible] = useState(false);
   const [isSortSheetVisible, setIsSortSheetVisible] = useState(false);
   const [busySnapId, setBusySnapId] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<'move' | 'favorite' | 'archive' | 'delete' | null>(null);
+  const [busyAction, setBusyAction] = useState<'move' | 'favorite' | 'archive' | 'delete' | 'edit' | null>(null);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isCompactWidth = width < 390;
@@ -512,7 +513,7 @@ export default function LibraryScreen() {
     setSort('newest');
   }
 
-  async function runSnapMutation(snap: Snap, mutation: 'move' | 'favorite' | 'archive' | 'delete', action: () => Promise<void>) {
+  async function runSnapMutation(snap: Snap, mutation: 'move' | 'favorite' | 'archive' | 'delete' | 'edit', action: () => Promise<void>) {
     try {
       setBusySnapId(snap.id);
       setBusyAction(mutation);
@@ -520,6 +521,9 @@ export default function LibraryScreen() {
       await action();
       setActionSnap(null);
       setMoveSnap(null);
+      if (mutation === 'edit') {
+        setDetailSnap(null);
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
     } finally {
@@ -540,6 +544,16 @@ export default function LibraryScreen() {
 
     await runSnapMutation(moveSnap, 'move', async () => {
       await moveSnapToShelf(user.id, moveSnap.id, destination?.id ?? null);
+    });
+  }
+
+  async function handleSaveSnapDetails(snap: Snap, input: UpdateSnapInput) {
+    if (!user?.id) {
+      return;
+    }
+
+    await runSnapMutation(snap, 'edit', async () => {
+      await updateSnapDetails(user.id, snap.id, input);
     });
   }
 
@@ -588,15 +602,6 @@ export default function LibraryScreen() {
         },
       ]);
     }, 0);
-  }
-
-  function openSnapContext(snap: Snap) {
-    if (snap.shelfId) {
-      router.push(`/shelf/${snap.shelfId}`);
-      return;
-    }
-
-    router.push('/tray');
   }
 
   return (
@@ -756,7 +761,7 @@ export default function LibraryScreen() {
               snap={item}
               shelfLabel={item.shelfId ? shelfNamesById.get(item.shelfId) ?? 'Shelf' : 'The Tray'}
               isBusy={busySnapId === item.id}
-              onOpenContext={() => openSnapContext(item)}
+              onOpenContext={() => setDetailSnap(item)}
               onOpenActions={() => setActionSnap(item)}
             />
           )}
@@ -826,6 +831,16 @@ export default function LibraryScreen() {
           actionSnap
             ? [
                 {
+                  label: 'Edit Details',
+                  icon: 'edit-3',
+                  disabled: busySnapId !== null,
+                  loading: busySnapId === actionSnap.id && busyAction === 'edit',
+                  onPress: () => {
+                    setDetailSnap(actionSnap);
+                    setActionSnap(null);
+                  },
+                },
+                {
                   label: 'Move Snap',
                   icon: 'folder',
                   disabled: busySnapId !== null,
@@ -863,6 +878,16 @@ export default function LibraryScreen() {
             : []
         }
         onClose={() => setActionSnap(null)}
+      />
+
+      <SnapDetailModal
+        visible={detailSnap !== null}
+        snap={detailSnap}
+        shelves={shelves}
+        isSaving={busySnapId === detailSnap?.id && busyAction === 'edit'}
+        error={error}
+        onClose={() => setDetailSnap(null)}
+        onSave={handleSaveSnapDetails}
       />
     </Screen>
   );

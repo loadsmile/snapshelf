@@ -1,23 +1,17 @@
-import * as FileSystem from 'expo-file-system/legacy';
-
+import { deleteImageLocally } from '@/features/images/local';
+import { resolveLocalImageUri } from '@/features/images/resolve';
 import type { Snap } from '@/features/snaps/types';
 
 export function resolveSnapImageUri(snap: Snap): string | null {
-  if (snap.localPath && FileSystem.documentDirectory) {
-    return `${FileSystem.documentDirectory}${snap.localPath}`;
+  const localUri = resolveLocalImageUri(snap.localPath);
+
+  if (localUri) {
+    return localUri;
   }
 
-  if (snap.imageUrl) {
-    return snap.imageUrl;
-  }
-
-  return null;
+  return snap.imageUrl;
 }
 
 export async function deleteSnapImageLocally(localPath: string | null) {
-  if (!localPath || !FileSystem.documentDirectory) {
-    return;
-  }
-
-  await FileSystem.deleteAsync(`${FileSystem.documentDirectory}${localPath}`, { idempotent: true });
+  await deleteImageLocally(localPath);
 }

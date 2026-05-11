@@ -4,23 +4,26 @@ import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
 import { formatCapturedAt, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
-import { deleteSnap, moveSnapToShelf, setSnapArchived, setSnapFavorite } from '@/features/snaps/api';
-import type { Snap } from '@/features/snaps/types';
-import { subscribeToShelves } from '@/features/shelves/api';
+import { deleteSnap, moveSnapToShelf, setSnapArchived, setSnapFavorite, updateSnapDetails } from '@/features/snaps/api';
+import type { Snap, UpdateSnapInput } from '@/features/snaps/types';
+import { createShelf, getDefaultShelfPlacement, subscribeToShelves } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { AppHeader } from '@/shared/components/AppHeader';
+import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
 import { CreateSnapModal } from '@/shared/components/CreateSnapModal';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { ShelfPickerModal } from '@/shared/components/ShelfPickerModal';
+import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { usePaginatedSnaps } from '@/shared/hooks/usePaginatedSnaps';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
-type BusyAction = 'move' | 'favorite' | 'archive' | 'delete';
+type BusyAction = 'move' | 'favorite' | 'archive' | 'delete' | 'edit';
 
 function TriageActionButton({
   label,
@@ -43,7 +46,10 @@ function TriageActionButton({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
       disabled={disabled || loading}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -75,6 +81,7 @@ function TraySnapRow({
   busyAction,
   isBusy,
   onMove,
+  onOpen,
   onToggleFavorite,
   onArchive,
   onDelete,
@@ -84,6 +91,7 @@ function TraySnapRow({
   busyAction: BusyAction | null;
   isBusy: boolean;
   onMove: () => void;
+  onOpen: () => void;
   onToggleFavorite: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -92,70 +100,72 @@ function TraySnapRow({
   const capturedAt = formatCapturedAt(snap.capturedAt ?? snap.createdAt);
 
   return (
-    <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.sm, borderRadius: theme.radii.lg }}>
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-        <SnapArtwork
-          snap={snap}
-          fallbackColors={colors}
-          style={{
-            width: 82,
-            height: 104,
-            borderRadius: theme.radii.md,
-            backgroundColor: theme.colors.background,
-          }}
-        />
+    <Pressable onPress={onOpen}>
+      <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.sm, borderRadius: theme.radii.lg }}>
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+          <SnapArtwork
+            snap={snap}
+            fallbackColors={colors}
+            style={{
+              width: 82,
+              height: 104,
+              borderRadius: theme.radii.md,
+              backgroundColor: theme.colors.background,
+            }}
+          />
 
-        <View style={{ flex: 1, minWidth: 0, paddingVertical: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginBottom: 7 }}>
-            <SectionLabel label={getSnapSourceLabel(snap.source)} />
-            {snap.isFavorite ? <Feather name="heart" size={14} color={theme.colors.primary} /> : null}
-          </View>
+          <View style={{ flex: 1, minWidth: 0, paddingVertical: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginBottom: 7 }}>
+              <SectionLabel label={getSnapSourceLabel(snap.source)} />
+              {snap.isFavorite ? <Feather name="heart" size={14} color={theme.colors.primary} /> : null}
+            </View>
 
-          <Text numberOfLines={1} style={[textStyles.titleMd, { marginBottom: 2 }]}>{getSnapHeadline(snap)}</Text>
-          {snap.thought ? (
-            <Text numberOfLines={2} style={[textStyles.bodySm, { marginBottom: theme.spacing.xs }]}>{snap.thought}</Text>
-          ) : null}
+            <Text numberOfLines={1} style={[textStyles.titleMd, { marginBottom: 2 }]}>{getSnapHeadline(snap)}</Text>
+            {snap.thought ? (
+              <Text numberOfLines={2} style={[textStyles.bodySm, { marginBottom: theme.spacing.xs }]}>{snap.thought}</Text>
+            ) : null}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Feather name="clock" size={13} color={theme.colors.textMuted} />
-            <Text numberOfLines={1} style={textStyles.bodySm}>{capturedAt}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="clock" size={13} color={theme.colors.textMuted} />
+              <Text numberOfLines={1} style={textStyles.bodySm}>{capturedAt}</Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      <View style={{ flexDirection: 'row', gap: 7, marginTop: theme.spacing.sm }}>
-        <TriageActionButton
-          label="Move"
-          icon="folder"
-          tone="primary"
-          disabled={!canMoveSnaps || isBusy}
-          loading={isBusy && busyAction === 'move'}
-          onPress={onMove}
-        />
-        <TriageActionButton
-          label={snap.isFavorite ? 'Saved' : 'Fav'}
-          icon={snap.isFavorite ? 'heart' : 'star'}
-          disabled={isBusy}
-          loading={isBusy && busyAction === 'favorite'}
-          onPress={onToggleFavorite}
-        />
-        <TriageActionButton
-          label="Archive"
-          icon="archive"
-          disabled={isBusy}
-          loading={isBusy && busyAction === 'archive'}
-          onPress={onArchive}
-        />
-        <TriageActionButton
-          label="Delete"
-          icon="trash-2"
-          tone="destructive"
-          disabled={isBusy}
-          loading={isBusy && busyAction === 'delete'}
-          onPress={onDelete}
-        />
-      </View>
-    </SurfaceCard>
+        <View style={{ flexDirection: 'row', gap: 7, marginTop: theme.spacing.sm }}>
+          <TriageActionButton
+            label="Move"
+            icon="folder"
+            tone="primary"
+            disabled={!canMoveSnaps || isBusy}
+            loading={isBusy && busyAction === 'move'}
+            onPress={onMove}
+          />
+          <TriageActionButton
+            label={snap.isFavorite ? 'Saved' : 'Fav'}
+            icon={snap.isFavorite ? 'heart' : 'star'}
+            disabled={isBusy}
+            loading={isBusy && busyAction === 'favorite'}
+            onPress={onToggleFavorite}
+          />
+          <TriageActionButton
+            label="Archive"
+            icon="archive"
+            disabled={isBusy}
+            loading={isBusy && busyAction === 'archive'}
+            onPress={onArchive}
+          />
+          <TriageActionButton
+            label="Delete"
+            icon="trash-2"
+            tone="destructive"
+            disabled={isBusy}
+            loading={isBusy && busyAction === 'delete'}
+            onPress={onDelete}
+          />
+        </View>
+      </SurfaceCard>
+    </Pressable>
   );
 }
 
@@ -165,9 +175,13 @@ export default function TrayScreen() {
   const [isLoadingShelves, setIsLoadingShelves] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSnap, setSelectedSnap] = useState<Snap | null>(null);
+  const [detailSnap, setDetailSnap] = useState<Snap | null>(null);
   const [busySnapId, setBusySnapId] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [isCreateSnapVisible, setIsCreateSnapVisible] = useState(false);
+  const [isCreateShelfVisible, setIsCreateShelfVisible] = useState(false);
+  const [isCreatingShelf, setIsCreatingShelf] = useState(false);
+  const [createShelfError, setCreateShelfError] = useState<string | null>(null);
   const [movedSnapIds, setMovedSnapIds] = useState<Set<string>>(() => new Set());
   const { error: snapsError, hasMore, loadMore, loading: isLoadingSnaps, loadingMore, snaps: traySnaps } = usePaginatedSnaps(user?.id, null);
 
@@ -232,6 +246,10 @@ export default function TrayScreen() {
       if (selectedSnap?.id === snap.id) {
         setSelectedSnap(null);
       }
+
+      if (mutation === 'edit' && detailSnap?.id === snap.id) {
+        setDetailSnap(null);
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
     } finally {
@@ -254,6 +272,26 @@ export default function TrayScreen() {
     });
   }
 
+  async function handleCreateShelf(input: { name: string; anchorShelfId: string | null }) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setIsCreatingShelf(true);
+      setCreateShelfError(null);
+      await createShelf(user.id, {
+        name: input.name,
+        ...getDefaultShelfPlacement(shelves.length),
+      });
+      setIsCreateShelfVisible(false);
+    } catch (nextError) {
+      setCreateShelfError(nextError instanceof Error ? nextError.message : 'Unable to create a Shelf right now.');
+    } finally {
+      setIsCreatingShelf(false);
+    }
+  }
+
   async function handleToggleFavorite(snap: Snap) {
     if (!user?.id) {
       return;
@@ -261,6 +299,16 @@ export default function TrayScreen() {
 
     await runSnapMutation(snap, 'favorite', async () => {
       await setSnapFavorite(user.id, snap.id, !snap.isFavorite);
+    });
+  }
+
+  async function handleSaveSnapDetails(snap: Snap, input: UpdateSnapInput) {
+    if (!user?.id) {
+      return;
+    }
+
+    await runSnapMutation(snap, 'edit', async () => {
+      await updateSnapDetails(user.id, snap.id, input);
     });
   }
 
@@ -346,10 +394,27 @@ export default function TrayScreen() {
       ) : null}
 
       {!isLoadingSnaps && !loadingMore && visibleTraySnaps.length === 0 ? (
-        <EmptyState
-          title="Your Tray is clear"
-          description={__DEV__ ? 'Seed sample data from Settings to test moving live Snaps into Shelves.' : 'New Snaps shared into SnapShelf land here first, then leave once you file them into Shelves.'}
-        />
+        <View>
+          <EmptyState
+            title="Your Tray is clear"
+            description={__DEV__ ? 'Seed sample data from Settings or add a Quick Snap to test moving live Snaps into Shelves.' : 'New Snaps shared into SnapShelf land here first, then leave once you file them into Shelves.'}
+          />
+          {!isLoadingShelves && shelves.length === 0 ? (
+            <SurfaceCard style={{ marginTop: theme.spacing.lg, padding: theme.spacing.lg }}>
+              <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>First Shelf</Text>
+              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Create a Shelf now so your first Snap has somewhere to go when you triage The Tray.</Text>
+              <PillButton label="Create First Shelf" icon="plus" fullWidth onPress={() => setIsCreateShelfVisible(true)} disabled={!user?.id || isCreatingShelf} />
+            </SurfaceCard>
+          ) : null}
+        </View>
+      ) : null}
+
+      {!isLoadingShelves && shelves.length === 0 && visibleTraySnaps.length > 0 ? (
+        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Create a Shelf to file Snaps</Text>
+          <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Move unlocks after you have at least one Shelf. Create one here, then keep triaging without leaving The Tray.</Text>
+          <PillButton label="Create First Shelf" icon="plus" fullWidth onPress={() => setIsCreateShelfVisible(true)} disabled={!user?.id || isCreatingShelf} />
+        </SurfaceCard>
       ) : null}
 
       {visibleTraySnaps.map((snap) => (
@@ -359,6 +424,7 @@ export default function TrayScreen() {
           canMoveSnaps={canMoveSnaps}
           busyAction={busySnapId === snap.id ? busyAction : null}
           isBusy={busySnapId !== null}
+          onOpen={() => setDetailSnap(snap)}
           onMove={() => setSelectedSnap(snap)}
           onToggleFavorite={() => {
             void handleToggleFavorite(snap);
@@ -416,6 +482,28 @@ export default function TrayScreen() {
         submitLabel="Save Snapshot"
         source="quick-snap"
         onClose={() => setIsCreateSnapVisible(false)}
+      />
+
+      <CreateShelfModal
+        visible={isCreateShelfVisible}
+        shelves={shelves}
+        isSubmitting={isCreatingShelf}
+        error={createShelfError}
+        onClose={() => {
+          setIsCreateShelfVisible(false);
+          setCreateShelfError(null);
+        }}
+        onSubmit={handleCreateShelf}
+      />
+
+      <SnapDetailModal
+        visible={detailSnap !== null}
+        snap={detailSnap}
+        shelves={shelves}
+        isSaving={busySnapId === detailSnap?.id && busyAction === 'edit'}
+        error={activeError}
+        onClose={() => setDetailSnap(null)}
+        onSave={handleSaveSnapDetails}
       />
     </Screen>
   );
