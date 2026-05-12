@@ -17,7 +17,7 @@ export function EmptyState({ title, description }: EmptyStateProps) {
         borderRadius: theme.radii.lg,
         borderWidth: 1,
         borderColor: theme.colors.borderSoft,
-        backgroundColor: 'rgba(255, 249, 243, 0.76)',
+        backgroundColor: theme.colors.surface,
       }}
     >
       <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{title}</Text>

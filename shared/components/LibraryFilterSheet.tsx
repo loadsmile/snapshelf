@@ -133,7 +133,7 @@ export function LibraryFilterSheet({
             borderTopLeftRadius: theme.radii.xl,
             borderTopRightRadius: theme.radii.xl,
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.85)',
+            borderColor: theme.colors.borderSoft,
             paddingTop: theme.spacing.sm,
             ...theme.shadows.card,
           }}

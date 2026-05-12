@@ -167,7 +167,12 @@ export function CreateSnapModal({
               }}
             >
               {imageUri ? (
-                <Image source={{ uri: imageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                <Image
+                  source={{ uri: imageUri }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                  onError={() => setError('SnapShelf cannot preview that image. Try choosing it again.')}
+                />
               ) : (
                 <Text style={textStyles.bodyMd}>{isPicking ? 'Opening library...' : 'Choose image from library'}</Text>
               )}

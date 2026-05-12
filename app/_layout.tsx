@@ -10,7 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/features/auth/AuthProvider';
 import { useAuth } from '@/features/auth/useAuth';
 import { RetainedShareIntentProvider, useRetainedShareIntentContext } from '@/shared/providers/RetainedShareIntentProvider';
-import { theme } from '@/shared/theme';
+import { theme, ThemeProvider, useThemeMode } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -41,7 +41,19 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" backgroundColor={theme.colors.background} />
+      <ThemeProvider>
+        <AppProviders />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function AppProviders() {
+  const { mode } = useThemeMode();
+
+  return (
+    <>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} backgroundColor={theme.colors.background} />
       <ShareIntentProvider
         options={{
           debug: __DEV__,
@@ -57,7 +69,7 @@ export default function RootLayout() {
           </AuthProvider>
         </RetainedShareIntentProvider>
       </ShareIntentProvider>
-    </SafeAreaProvider>
+    </>
   );
 }
 

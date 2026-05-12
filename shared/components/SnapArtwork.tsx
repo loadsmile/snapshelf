@@ -16,9 +16,10 @@ type SnapArtworkProps = {
   style: StyleProp<ViewStyle>;
   children?: ReactNode;
   showChildrenOnFallback?: boolean;
+  fallbackLabel?: string;
 };
 
-export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false }: SnapArtworkProps) {
+export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false, fallbackLabel = 'Image unavailable' }: SnapArtworkProps) {
   const resolvedImageUri = useMemo(() => imageUri ?? (snap ? resolveSnapImageUri(snap) : null), [imageUri, snap]);
   const [isBroken, setIsBroken] = useState(false);
   const shouldShowFallback = !resolvedImageUri || isBroken;
@@ -31,11 +32,11 @@ export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, styl
     <View style={[style, { overflow: 'hidden' }]}>
       {shouldShowFallback ? (
         <View style={[StyleSheet.absoluteFillObject, styles.placeholder]}>
-          <LinearGradient colors={['#F4EFE8', '#E8E1D7']} style={StyleSheet.absoluteFillObject} />
-          <View style={styles.placeholderBadge}>
+          <LinearGradient colors={[theme.colors.surfaceSoft, theme.colors.surface]} style={StyleSheet.absoluteFillObject} />
+          <View style={[styles.placeholderBadge, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderSoft }]}>
             <Feather name="camera" size={16} color={theme.colors.textMuted} />
           </View>
-          <Text style={[textStyles.bodySm, styles.placeholderLabel]}>Not available</Text>
+          <Text style={[textStyles.bodySm, styles.placeholderLabel]}>{fallbackLabel}</Text>
         </View>
       ) : (
         <>
@@ -61,11 +62,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(255, 249, 243, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(132, 111, 92, 0.12)',
   },
   placeholderLabel: {
     color: theme.colors.textMuted,

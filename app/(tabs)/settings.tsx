@@ -1,16 +1,19 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Switch, Text, View } from 'react-native';
 
 import { getAuthErrorMessage } from '@/features/auth/api';
 import { useAuth } from '@/features/auth/useAuth';
+import { summarizeLocalMediaHealth, type LocalMediaHealthSummary } from '@/features/images/health';
+import { getLocalImageAvailability } from '@/features/images/local';
 import { seedSampleData } from '@/features/sample-data/api';
+import { listAllSnaps } from '@/features/snaps/api';
 import { AppHeader } from '@/shared/components/AppHeader';
 import { FormField } from '@/shared/components/FormField';
 import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
-import { theme } from '@/shared/theme';
+import { theme, useThemeMode } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
 const DELETE_CONFIRMATION_TEXT = 'DELETE';
@@ -27,9 +30,11 @@ export default function SettingsScreen() {
     updateDisplayName,
     user,
   } = useAuth();
+  const { mode, setMode } = useThemeMode();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isCheckingMedia, setIsCheckingMedia] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSendingPasswordReset, setIsSendingPasswordReset] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -42,6 +47,8 @@ export default function SettingsScreen() {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [mediaHealth, setMediaHealth] = useState<LocalMediaHealthSummary | null>(null);
+  const [mediaHealthMessage, setMediaHealthMessage] = useState<string | null>(null);
 
   const accountEmail = profile?.email ?? user?.email ?? null;
   const accountDisplayName = profile?.displayName ?? user?.displayName ?? null;
@@ -72,6 +79,36 @@ export default function SettingsScreen() {
       setSeedMessage(error instanceof Error ? error.message : 'Unable to seed sample data right now.');
     } finally {
       setIsSeeding(false);
+    }
+  }
+
+  async function handleCheckLocalMedia() {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setIsCheckingMedia(true);
+      setMediaHealth(null);
+      setMediaHealthMessage(null);
+
+      const snaps = await listAllSnaps(user.id);
+      const localPaths = [...new Set(snaps.map((snap) => snap.localPath).filter((localPath): localPath is string => Boolean(localPath)))];
+      const availabilityEntries = await Promise.all(localPaths.map(async (localPath) => [localPath, await getLocalImageAvailability(localPath)] as const));
+      const summary = summarizeLocalMediaHealth(snaps, new Map(availabilityEntries));
+
+      setMediaHealth(summary);
+      if (summary.unavailable > 0) {
+        setMediaHealthMessage('Local file storage is unavailable on this device right now. Snap metadata is still safe in Firestore.');
+      } else if (summary.missing > 0) {
+        setMediaHealthMessage('Some Snap images are missing from this device. Their titles, notes, labels, and Shelf assignments are still available.');
+      } else {
+        setMediaHealthMessage('Local media looks healthy on this device.');
+      }
+    } catch (error) {
+      setMediaHealthMessage(error instanceof Error ? error.message : 'Unable to check local media right now.');
+    } finally {
+      setIsCheckingMedia(false);
     }
   }
 
@@ -128,6 +165,23 @@ export default function SettingsScreen() {
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Settings</Text>
         <Text style={textStyles.bodyMd}>Manage your account and SnapShelf data.</Text>
       </View>
+
+      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Appearance</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>Midnight Archive</Text>
+            <Text style={textStyles.bodyMd}>Use the warm dark palette across SnapShelf.</Text>
+          </View>
+          <Switch
+            value={mode === 'dark'}
+            onValueChange={(enabled) => setMode(enabled ? 'dark' : 'light')}
+            trackColor={{ false: theme.colors.surfaceSoft, true: theme.colors.primaryDeep }}
+            thumbColor={mode === 'dark' ? theme.colors.primary : theme.colors.surface}
+            ios_backgroundColor={theme.colors.surfaceSoft}
+          />
+        </View>
+      </SurfaceCard>
 
       {isConfigured ? (
         <>
@@ -252,6 +306,22 @@ export default function SettingsScreen() {
                 fullWidth
               />
               {seedMessage ? <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{seedMessage}</Text> : null}
+
+              <View style={{ height: 1, backgroundColor: theme.colors.borderSoft, marginVertical: theme.spacing.lg }} />
+
+              <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Local Media Health</Text>
+              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Check whether Snap image files saved on this device still match Firestore metadata.</Text>
+              <PillButton
+                label={isCheckingMedia ? 'Checking Media...' : 'Check Local Media'}
+                icon="hard-drive"
+                onPress={handleCheckLocalMedia}
+                disabled={isCheckingMedia || !user?.id}
+                fullWidth
+              />
+              {mediaHealth ? (
+                <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Snaps: {mediaHealth.totalSnaps} | Local paths: {mediaHealth.withLocalPath} | Available: {mediaHealth.available} | Missing: {mediaHealth.missing} | No local media: {mediaHealth.withoutLocalMedia}</Text>
+              ) : null}
+              {mediaHealthMessage ? <Text style={[textStyles.bodySm, { color: mediaHealth?.missing || mediaHealth?.unavailable ? theme.colors.primary : theme.colors.textMuted, marginTop: theme.spacing.sm }]}>{mediaHealthMessage}</Text> : null}
             </SurfaceCard>
           ) : null}
         </>

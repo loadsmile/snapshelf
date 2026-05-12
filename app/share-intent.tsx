@@ -200,6 +200,7 @@ export default function ShareIntentScreen() {
         <SnapArtwork
           imageUri={imagePath}
           fallbackColors={['#EFE9DD', '#DDE4D5']}
+          fallbackLabel={imagePath ? 'Shared image unavailable' : 'No image preview'}
           showChildrenOnFallback
           style={{
             height: 240,
@@ -211,7 +212,9 @@ export default function ShareIntentScreen() {
         >
           <View
             style={{
-              backgroundColor: 'rgba(255,249,243,0.86)',
+              backgroundColor: theme.colors.surface,
+              borderWidth: 1,
+              borderColor: theme.colors.borderSoft,
               borderRadius: 18,
               paddingHorizontal: 12,
               paddingVertical: 10,

@@ -16,7 +16,7 @@ export function SurfaceCard({ children, style }: SurfaceCardProps) {
           backgroundColor: theme.colors.surface,
           borderRadius: theme.radii.xl,
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.85)',
+          borderColor: theme.colors.borderSoft,
           ...theme.shadows.card,
         },
         style,

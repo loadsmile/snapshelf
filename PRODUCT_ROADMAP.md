@@ -17,51 +17,54 @@ Already completed:
 - The Tray is the compact triage queue with direct Move, Favorite, Archive, and Delete actions.
 - Board and Shelf views now explain the organization model and make Shelves feel more meaningful.
 - Settings is focused on account/profile/security/dev tools rather than setup scaffolding.
-- Snap media is compressed and saved locally; deletion and account deletion clean up local image files.
+- Snap media is compressed and saved locally; deletion and account deletion clean up local image files idempotently.
+- Local media failures now have graceful UI fallbacks, clearer save errors, and a dev-only health check in Settings.
+- Appearance supports a persisted light/dark toggle, with Midnight Archive as the warm dark palette and the SnapShelf title retaining its original brand color and font.
 
 Important constraint:
 
 - Local image storage is a product choice, not a temporary gap for the next phase.
 
-## Next 4 Sessions
+## Completed Sessions
 
-### Session 1: Harden Local-First Media
+### Completed: Session 1, Harden Local-First Media
 
 Product goal: make on-device media storage feel dependable and recoverable without adding cloud image sync.
 
-Focus:
+Completed outcomes:
 
 - Audit every path that creates, reads, moves, edits, archives, deletes, or account-deletes Snaps.
-- Improve handling for missing local files, failed image copies, failed compression, and unavailable `documentDirectory`.
-- Add graceful UI copy when a Snap's local image is unavailable but metadata still exists.
-- Add a lightweight local media health check in Settings or dev tools if it can stay unobtrusive.
-- Keep `localPath` as the canonical image reference for saved media.
+- Hardened local image save/delete/status helpers around failed copies, failed compression, missing files, and unavailable `documentDirectory`.
+- Added graceful fallback copy when a Snap's local image is unavailable while metadata remains available.
+- Added clearer user-facing errors for failed local image saves and previews.
+- Added a lightweight dev-only local media health check in Settings.
+- Kept `localPath` as the canonical image reference for saved media.
+- Added focused helper coverage and verified typecheck/tests.
 
 Why this matters:
 
 - Local-first only works if users trust that saved images remain visible and failures are understandable.
 - Firestore metadata can outlive local files after reinstall, device migration, or OS cleanup; the product needs a calm fallback state.
 
-Success criteria:
+### Completed: Midnight Archive Dark Mode
 
-- Missing local media does not produce broken UI or confusing blank states.
-- Delete/account-delete local cleanup remains idempotent and safe.
-- Failed image save paths show clear user-facing errors.
-- No Firebase Storage or upload flow is introduced.
+Product goal: make SnapShelf comfortable to use in dark environments without changing the established brand typography.
 
-Suggested prompt:
+Completed outcomes:
 
-```text
-Harden SnapShelf's local-first media handling without adding Firebase Storage or image upload sync.
+- Added dynamic light and Midnight Archive theme tokens for background, surfaces, primary actions, text, borders, thread accents, and shadows.
+- Added a persisted Settings toggle for switching between light mode and Midnight Archive dark mode.
+- Updated system status bar styling to match the selected theme.
+- Preserved the SnapShelf title font and original brand color.
+- Replaced obvious hardcoded light surfaces and borders with theme-aware tokens.
+- Verified typecheck and tests.
 
-Goals:
-- inspect Snap creation, share-intent save, rendering, deletion, and account deletion flows
-- keep images stored locally under Expo documentDirectory/snaps
-- keep Firestore storing metadata and localPath only
-- add graceful fallbacks for missing local image files or failed local saves
-- avoid cross-device image sync, Firebase Storage, or upload scaffolding
-- run typecheck and tests after changes
-```
+Why this matters:
+
+- A reliable dark mode makes the product feel more polished and usable across lighting contexts.
+- Keeping the brand title stable preserves recognizability while the rest of the interface adapts.
+
+## Next 3 Sessions
 
 ### Session 2: Improve Capture Context
 
