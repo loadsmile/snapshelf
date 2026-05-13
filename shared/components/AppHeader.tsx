@@ -7,9 +7,10 @@ import { textStyles } from '@/shared/theme/typography';
 type AppHeaderProps = {
   onPressSearch?: () => void;
   searchIconName?: keyof typeof Feather.glyphMap;
+  searchButtonTestID?: string;
 };
 
-export function AppHeader({ onPressSearch, searchIconName = 'search' }: AppHeaderProps) {
+export function AppHeader({ onPressSearch, searchIconName = 'search', searchButtonTestID }: AppHeaderProps) {
   return (
     <View
       style={{
@@ -24,7 +25,7 @@ export function AppHeader({ onPressSearch, searchIconName = 'search' }: AppHeade
         <Text style={textStyles.brand}>SnapShelf</Text>
       </View>
       {onPressSearch ? (
-        <Pressable onPress={onPressSearch} hitSlop={10} style={{ padding: 2 }}>
+        <Pressable onPress={onPressSearch} hitSlop={10} testID={searchButtonTestID} style={{ padding: 2 }}>
           <Feather name={searchIconName} size={28} color={theme.colors.primary} />
         </Pressable>
       ) : (

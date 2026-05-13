@@ -12,6 +12,7 @@ type PillButtonProps = {
   fullWidth?: boolean;
   onPress?: () => void;
   disabled?: boolean;
+  testID?: string;
 };
 
 export function PillButton({
@@ -22,6 +23,7 @@ export function PillButton({
   fullWidth = false,
   onPress,
   disabled = false,
+  testID,
 }: PillButtonProps) {
   const isPrimary = variant === 'primary';
   const verticalPadding = size === 'sm' ? 9 : 15;
@@ -31,6 +33,9 @@ export function PillButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={[
         {
           backgroundColor: isPrimary ? theme.colors.primary : theme.colors.surfaceSoft,

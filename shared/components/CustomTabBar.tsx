@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BoardIcon } from '@/shared/components/icons/BoardIcon';
 import { TrayIcon } from '@/shared/components/icons/TrayIcon';
-import { theme } from '@/shared/theme';
+import { theme, useThemeMode } from '@/shared/theme';
 
 function renderIcon(routeName: string, color: string, focused: boolean) {
   if (routeName === 'board') {
@@ -25,6 +25,7 @@ function renderIcon(routeName: string, color: string, focused: boolean) {
 
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  useThemeMode();
 
   return (
     <View
@@ -71,6 +72,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
           <Pressable
             key={route.key}
             onPress={onPress}
+            testID={`tab-${route.name}`}
             style={{ flex: 1, marginHorizontal: 6 }}
           >
             <View

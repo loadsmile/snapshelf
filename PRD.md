@@ -234,6 +234,13 @@ Firebase Auth remains the authentication layer. Email/password auth is implement
 
 Firebase Storage should be added when cross-device synced images and thumbnails become part of v1 scope. Current image references can remain local until that scope is explicitly prioritized.
 
+Current V1 local-first media limitations:
+
+- Snap metadata syncs through Firestore, but Snap image files stay on the device where they were saved.
+- Signing in on another device can show synced Snap records without their local image files until media sync is added.
+- Reinstalling the app, clearing app data, or restoring only Firestore data can leave Snap records without local media.
+- Share intent image saves depend on OS handoff and file permissions, so iOS and Android device checks are required before release.
+
 Future backend expansion:
 
 - Firebase Storage for synced snap images and thumbnails

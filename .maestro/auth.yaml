@@ -1,0 +1,19 @@
+appId: com.anonymous.snapshelf
+---
+- launchApp
+- assertVisible: SnapShelf
+- runFlow:
+    when:
+      visible:
+        id: auth-email-input
+    commands:
+      - tapOn:
+          id: auth-email-input
+      - inputText: ${SNAPSHELF_TEST_EMAIL}
+      - tapOn:
+          id: auth-password-input
+      - inputText: ${SNAPSHELF_TEST_PASSWORD}
+      - hideKeyboard
+      - tapOn:
+          id: auth-sign-in-button
+- assertVisible: SnapShelf

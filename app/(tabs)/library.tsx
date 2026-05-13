@@ -276,11 +276,13 @@ function LibrarySnapCard({
                 borderRadius: theme.radii.pill,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: 'rgba(255,255,255,0.18)',
+                backgroundColor: 'rgba(28, 21, 16, 0.72)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.24)',
               }}
             >
-              <Feather name={snap.isFavorite ? 'heart' : 'clock'} size={14} color={theme.colors.surface} />
-              <Text style={[textStyles.bodySm, { color: theme.colors.surface }]}>{formatCapturedAt(snap.capturedAt ?? snap.createdAt)}</Text>
+              <Feather name={snap.isFavorite ? 'heart' : 'clock'} size={14} color={theme.colors.white} />
+              <Text style={[textStyles.bodySm, { color: theme.colors.white }]}>{formatCapturedAt(snap.capturedAt ?? snap.createdAt)}</Text>
             </View>
           </View>
         </SnapArtwork>
@@ -521,7 +523,7 @@ export default function LibraryScreen() {
       await action();
       setActionSnap(null);
       setMoveSnap(null);
-      if (mutation === 'edit') {
+      if ((mutation === 'edit' || mutation === 'delete') && detailSnap?.id === snap.id) {
         setDetailSnap(null);
       }
     } catch (nextError) {
@@ -564,6 +566,7 @@ export default function LibraryScreen() {
 
     await runSnapMutation(snap, 'favorite', async () => {
       await setSnapFavorite(user.id, snap.id, !snap.isFavorite);
+      setDetailSnap((current) => (current?.id === snap.id ? { ...current, isFavorite: !snap.isFavorite } : current));
     });
   }
 
@@ -574,6 +577,7 @@ export default function LibraryScreen() {
 
     await runSnapMutation(snap, 'archive', async () => {
       await setSnapArchived(user.id, snap.id, !snap.isArchived);
+      setDetailSnap((current) => (current?.id === snap.id ? { ...current, isArchived: !snap.isArchived } : current));
     });
   }
 
@@ -859,7 +863,7 @@ export default function LibraryScreen() {
                   },
                 },
                 {
-                  label: actionSnap.isArchived ? 'Restore to Active' : 'Archive Snap',
+                  label: actionSnap.isArchived ? 'Restore Snap' : 'Archive Snap',
                   icon: actionSnap.isArchived ? 'rotate-ccw' : 'archive',
                   disabled: busySnapId !== null,
                   loading: busySnapId === actionSnap.id && busyAction === 'archive',
@@ -885,9 +889,15 @@ export default function LibraryScreen() {
         snap={detailSnap}
         shelves={shelves}
         isSaving={busySnapId === detailSnap?.id && busyAction === 'edit'}
+        isFavoriteLoading={busySnapId === detailSnap?.id && busyAction === 'favorite'}
+        isArchiveLoading={busySnapId === detailSnap?.id && busyAction === 'archive'}
+        isDeleteLoading={busySnapId === detailSnap?.id && busyAction === 'delete'}
         error={error}
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
+        onToggleFavorite={handleToggleFavorite}
+        onToggleArchived={handleToggleArchived}
+        onDelete={handleConfirmDelete}
       />
     </Screen>
   );

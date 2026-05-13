@@ -170,12 +170,13 @@ export default function SettingsScreen() {
         <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Appearance</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
           <View style={{ flex: 1 }}>
-            <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>Midnight Archive</Text>
+            <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>Dark Mode</Text>
             <Text style={textStyles.bodyMd}>Use the warm dark palette across SnapShelf.</Text>
           </View>
           <Switch
             value={mode === 'dark'}
             onValueChange={(enabled) => setMode(enabled ? 'dark' : 'light')}
+            testID="settings-theme-toggle"
             trackColor={{ false: theme.colors.surfaceSoft, true: theme.colors.primaryDeep }}
             thumbColor={mode === 'dark' ? theme.colors.primary : theme.colors.surface}
             ios_backgroundColor={theme.colors.surfaceSoft}
@@ -303,6 +304,7 @@ export default function SettingsScreen() {
                 icon="database"
                 onPress={handleSeedSampleData}
                 disabled={isSeeding || !user?.id}
+                testID="settings-seed-sample-data-button"
                 fullWidth
               />
               {seedMessage ? <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{seedMessage}</Text> : null}

@@ -6,11 +6,13 @@ import { theme } from '@/shared/theme';
 type SurfaceCardProps = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 };
 
-export function SurfaceCard({ children, style }: SurfaceCardProps) {
+export function SurfaceCard({ children, style, testID }: SurfaceCardProps) {
   return (
     <View
+      testID={testID}
       style={[
         {
           backgroundColor: theme.colors.surface,

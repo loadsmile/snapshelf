@@ -1,0 +1,16 @@
+appId: com.anonymous.snapshelf
+---
+- launchApp
+- assertVisible: SnapShelf
+- tapOn:
+    id: tab-library
+- assertVisible: Library
+- tapOn:
+    id: tab-tray
+- assertVisible: The Tray
+- tapOn:
+    id: tab-board
+- assertVisible: Board
+- tapOn:
+    id: tab-settings
+- assertVisible: Settings

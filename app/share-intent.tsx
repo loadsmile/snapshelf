@@ -5,6 +5,8 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
 import { createSnap, saveSnapImageLocally } from '@/features/snaps/api';
+import type { SnapSource } from '@/features/snaps/types';
+import { parseSnapLabels } from '@/features/snaps/utils';
 import { subscribeToShelves } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { FormField } from '@/shared/components/FormField';
@@ -36,6 +38,54 @@ function getInitialTitle(input: { metaTitle?: string | null; webUrl?: string | n
   return '';
 }
 
+function getShareSource(input: { hasImage: boolean; text?: string | null; webUrl?: string | null }): SnapSource {
+  if (input.webUrl) {
+    return 'web-clip';
+  }
+
+  if (input.hasImage) {
+    return 'camera-roll';
+  }
+
+  if (input.text) {
+    return 'quick-snap';
+  }
+
+  return 'unknown';
+}
+
+function getShareCopy(input: { source: SnapSource; helperText: string }) {
+  if (input.source === 'web-clip') {
+    return {
+      description: 'Review the web clip, add a quick thought or labels if helpful, then save it to The Tray or straight into a Shelf.',
+      fallbackLabel: 'Web clip preview unavailable',
+      thoughtPlaceholder: 'What page, product, or idea is this for?',
+    };
+  }
+
+  if (input.source === 'camera-roll') {
+    return {
+      description: 'Review the shared image, add only the context you know now, then save it before it gets lost in your camera roll.',
+      fallbackLabel: 'Shared image unavailable',
+      thoughtPlaceholder: 'What should future you remember about this?',
+    };
+  }
+
+  if (input.source === 'quick-snap') {
+    return {
+      description: 'Save this shared text as a Quick Snap. A title, thought, labels, and Shelf are optional but make it easier to find later.',
+      fallbackLabel: 'Shared text',
+      thoughtPlaceholder: 'Why did you save this?',
+    };
+  }
+
+  return {
+    description: input.helperText,
+    fallbackLabel: 'Shared content unavailable',
+    thoughtPlaceholder: 'What should this remind you of?',
+  };
+}
+
 export default function ShareIntentScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -44,6 +94,7 @@ export default function ShareIntentScreen() {
   const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [labels, setLabels] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,6 +130,7 @@ export default function ShareIntentScreen() {
       }),
     );
     setNote('');
+    setLabels('');
     setSelectedShelfId(null);
     setError(null);
   }, [shareIntent.meta?.title, shareIntent.text, shareIntent.webUrl, sharedFile?.fileName]);
@@ -114,9 +166,34 @@ export default function ShareIntentScreen() {
     return sharedFile?.fileName ?? 'Shared content is ready to save.';
   }, [shareIntent.text, shareIntent.webUrl, sharedFile?.fileName]);
 
+  const source = useMemo(
+    () =>
+      getShareSource({
+        hasImage: Boolean(imagePath),
+        text: shareIntent.text,
+        webUrl: shareIntent.webUrl,
+      }),
+    [imagePath, shareIntent.text, shareIntent.webUrl],
+  );
+
+  const copy = useMemo(() => getShareCopy({ source, helperText }), [helperText, source]);
+
+  const destinationLabel = useMemo(() => {
+    if (!selectedShelfId) {
+      return 'The Tray';
+    }
+
+    return shelves.find((shelf) => shelf.id === selectedShelfId)?.name ?? 'Selected Shelf';
+  }, [selectedShelfId, shelves]);
+
   async function handleSave() {
     if (!user?.id) {
       setError('You need to be signed in to save a Quick Snap.');
+      return;
+    }
+
+    if (!imagePath && !shareIntent.text && !shareIntent.webUrl) {
+      setError('SnapShelf did not receive an image, link, or text to save. Try sharing it again.');
       return;
     }
 
@@ -141,7 +218,8 @@ export default function ShareIntentScreen() {
         shelfId: selectedShelfId,
         title: title.trim() || null,
         thought: noteParts.filter(Boolean).join('\n\n') || null,
-        source: 'quick-snap',
+        labels: parseSnapLabels(labels),
+        source,
         capturedAt: new Date(),
         imageUrl: null,
         localPath,
@@ -195,12 +273,12 @@ export default function ShareIntentScreen() {
 
       <SurfaceCard style={{ padding: theme.spacing.lg }}>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Quick Snap</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Review what was shared, add a note if you want, then save it to The Tray or straight into a Shelf.</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{copy.description}</Text>
 
         <SnapArtwork
           imageUri={imagePath}
           fallbackColors={['#EFE9DD', '#DDE4D5']}
-          fallbackLabel={imagePath ? 'Shared image unavailable' : 'No image preview'}
+          fallbackLabel={copy.fallbackLabel}
           showChildrenOnFallback
           style={{
             height: 240,
@@ -224,13 +302,15 @@ export default function ShareIntentScreen() {
           </View>
         </SnapArtwork>
 
-        <FormField label="Title" value={title} onChangeText={setTitle} placeholder="Give this Snap a title" />
-        <FormField label="Quick Thought" value={note} onChangeText={setNote} placeholder="Why did you save this?" multiline style={{ minHeight: 96, textAlignVertical: 'top' }} />
+        <FormField label="Title" value={title} onChangeText={setTitle} testID="share-title-input" placeholder="Give this Snap a title" />
+        <FormField label="Quick Thought" value={note} onChangeText={setNote} testID="share-thought-input" placeholder={copy.thoughtPlaceholder} multiline style={{ minHeight: 96, textAlignVertical: 'top' }} />
+        <FormField label="Labels" value={labels} onChangeText={setLabels} testID="share-labels-input" placeholder="interiors, wishlist, source" autoCapitalize="none" />
+        <Text style={[textStyles.bodySm, { color: theme.colors.textMuted, marginTop: -theme.spacing.sm, marginBottom: theme.spacing.md }]}>Separate labels with commas. Leave blank if you just want to save fast.</Text>
 
         <View style={{ marginBottom: theme.spacing.md }}>
           <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Save To</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
-            <PillButton label="The Tray" variant={selectedShelfId === null ? 'primary' : 'secondary'} size="sm" onPress={() => setSelectedShelfId(null)} disabled={isSubmitting} />
+            <PillButton label="The Tray" variant={selectedShelfId === null ? 'primary' : 'secondary'} size="sm" onPress={() => setSelectedShelfId(null)} disabled={isSubmitting} testID="share-destination-tray" />
             {shelves.map((shelf) => (
               <PillButton
                 key={shelf.id}
@@ -239,14 +319,16 @@ export default function ShareIntentScreen() {
                 size="sm"
                 onPress={() => setSelectedShelfId(shelf.id)}
                 disabled={isSubmitting}
+                testID={`share-destination-shelf-${shelf.id}`}
               />
             ))}
           </ScrollView>
+          <Text style={[textStyles.bodySm, { marginTop: 8 }]}>Saving to {destinationLabel}. {selectedShelfId ? 'This Snap will skip The Tray.' : 'You can file it into a Shelf later.'}</Text>
         </View>
 
-        {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
+        {shareIntentError || error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error ?? shareIntentError}</Text> : null}
 
-        <PillButton label={isSubmitting ? 'Saving Snapshot...' : 'Save Snapshot'} icon="image" fullWidth onPress={handleSave} disabled={isSubmitting} />
+        <PillButton label={isSubmitting ? 'Saving Snapshot...' : 'Save Snapshot'} icon="image" fullWidth onPress={handleSave} disabled={isSubmitting} testID="share-save-button" />
 
         <View style={{ marginTop: theme.spacing.sm }}>
           <PillButton label="Cancel" variant="secondary" fullWidth onPress={handleCancel} disabled={isSubmitting} />

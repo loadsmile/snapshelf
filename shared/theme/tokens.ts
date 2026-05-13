@@ -11,8 +11,8 @@ export const lightColors = {
   textMuted: '#74675D',
   borderSoft: '#F0E3D7',
   shadow: '#6C3A1A',
-  dot: '#EDC8B6',
-  thread: '#EDC3B0',
+  dot: '#E3A184',
+  thread: '#DD8F6E',
   white: '#FFFFFF',
 };
 
@@ -27,8 +27,8 @@ export const darkColors: typeof lightColors = {
   textMuted: '#A8968A',
   borderSoft: '#3A2A20',
   shadow: '#000000',
-  dot: '#3D2518',
-  thread: '#3D2518',
+  dot: '#70402C',
+  thread: '#7C472F',
   white: '#FFFFFF',
 };
 

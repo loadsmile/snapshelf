@@ -1,0 +1,27 @@
+appId: com.anonymous.snapshelf
+---
+- launchApp
+- assertVisible: SnapShelf
+- tapOn:
+    id: tab-tray
+- assertVisible: The Tray
+- tapOn:
+    id: create-snap-open-button
+- assertVisible:
+    id: create-snap-image-picker
+- tapOn:
+    id: create-snap-title-input
+- inputText: Maestro smoke snap
+- tapOn:
+    id: create-snap-thought-input
+- inputText: Saved by Maestro smoke coverage
+- tapOn:
+    id: create-snap-labels-input
+- inputText: maestro, smoke
+- scrollUntilVisible:
+    element:
+      id: create-snap-save-button
+    direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: Save Snapshot

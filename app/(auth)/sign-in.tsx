@@ -57,6 +57,7 @@ export default function SignInScreen() {
           label="Email"
           value={email}
           onChangeText={setEmail}
+          testID="auth-email-input"
           placeholder="you@example.com"
           autoCapitalize="none"
           keyboardType="email-address"
@@ -67,6 +68,7 @@ export default function SignInScreen() {
           label="Password"
           value={password}
           onChangeText={setPassword}
+          testID="auth-password-input"
           placeholder="Enter your password"
           secureTextEntry
           textContentType="password"
@@ -79,6 +81,7 @@ export default function SignInScreen() {
           label={isSubmitting ? 'Signing In...' : 'Sign In'}
           onPress={handleSignIn}
           disabled={isSubmitting || !isConfigured}
+          testID="auth-sign-in-button"
           fullWidth
         />
 

@@ -49,6 +49,7 @@ const STACK_WIDTH = 188;
 const STACK_HEIGHT = 210;
 const STACK_COVER_FRAME_SIZE = 178;
 const STACK_COVER_SIZE = 152;
+const SEARCH_FOCUS_SCALE = 1.25;
 
 type Point = {
   x: number;
@@ -238,6 +239,17 @@ function getNodeCenter(shelf: ReturnType<typeof getResolvedShelf>) {
   return {
     x: shelf.boardX + dimensions.width / 2,
     y: shelf.boardY + dimensions.height / 2,
+  };
+}
+
+function getShelfFocusTransform(shelf: ReturnType<typeof getResolvedShelf>, viewport: Point, fitScale: number): BoardTransform {
+  const center = getNodeCenter(shelf);
+  const targetScale = clamp(Math.max(fitScale, SEARCH_FOCUS_SCALE), fitScale, MAX_SCALE);
+
+  return {
+    scale: targetScale,
+    x: viewport.x / 2 - center.x * targetScale,
+    y: viewport.y / 2 - center.y * targetScale,
   };
 }
 
@@ -566,6 +578,7 @@ function ViewModeToggle({ viewMode, onChange }: { viewMode: BoardViewMode; onCha
           <Pressable
             key={option.mode}
             onPress={() => onChange(option.mode)}
+            testID={`board-view-${option.mode}-toggle`}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -825,6 +838,7 @@ function SnapSearchResult({
 function DraggableShelfNode({
   shelf,
   scale,
+  isHighlighted,
   coverSnap,
   coverImageUri,
   onPress,
@@ -833,6 +847,7 @@ function DraggableShelfNode({
 }: {
   shelf: ReturnType<typeof getResolvedShelf>;
   scale: number;
+  isHighlighted?: boolean;
   coverSnap: Snap | null;
   coverImageUri: string | null;
   onPress: () => void;
@@ -889,6 +904,22 @@ function DraggableShelfNode({
         top: shelf.boardY,
       }}
     >
+      {isHighlighted ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: -14,
+            top: -14,
+            width: dimensions.width + 28,
+            height: dimensions.height + 82,
+            borderRadius: isPrimary ? 62 : dimensions.width / 2 + 18,
+            borderWidth: 2,
+            borderColor: theme.colors.primary,
+            backgroundColor: 'rgba(198, 58, 6, 0.08)',
+          }}
+        />
+      ) : null}
       <Pressable onPress={onPress} style={{ alignItems: 'center' }} hitSlop={18}>
         {isPrimary ? <PrimaryVisual size={dimensions.width} colors={colors} snap={coverSnap} imageUri={coverImageUri} /> : null}
 
@@ -1134,6 +1165,7 @@ export default function BoardScreen() {
 
   const bootstrappingIds = useRef(new Set<string>());
   const transformRef = useRef(boardTransform);
+  const lastSearchFocusKeyRef = useRef<string | null>(null);
   const pinchGestureRef = useRef<
     | {
         startTransform: BoardTransform;
@@ -1350,6 +1382,30 @@ export default function BoardScreen() {
     () => searchSnaps(allSnaps, trimmedSearchQuery, (snap) => (snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : null)),
     [allSnaps, shelfNamesById, trimmedSearchQuery],
   );
+  const matchingShelfIds = useMemo(() => {
+    const ids = new Set(matchingShelves.map((shelf) => shelf.id));
+
+    matchingSnaps.forEach((snap) => {
+      if (snap.shelfId) {
+        ids.add(snap.shelfId);
+      }
+    });
+
+    return ids;
+  }, [matchingShelves, matchingSnaps]);
+  const gridSearchFocusShelf = useMemo(() => {
+    if (!trimmedSearchQuery) {
+      return null;
+    }
+
+    if (matchingShelves[0]) {
+      return matchingShelves[0];
+    }
+
+    const firstShelfSnap = matchingSnaps.find((snap) => snap.shelfId);
+    return firstShelfSnap?.shelfId ? shelvesById.get(firstShelfSnap.shelfId) ?? null : null;
+  }, [matchingShelves, matchingSnaps, shelvesById, trimmedSearchQuery]);
+  const trayOnlySearchResultCount = useMemo(() => matchingSnaps.filter((snap) => !snap.shelfId).length, [matchingSnaps]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1416,6 +1472,21 @@ export default function BoardScreen() {
   function applyTransform(nextTransform: BoardTransform) {
     setBoardTransform(clampTransform(nextTransform, viewport, contentBounds));
   }
+
+  useEffect(() => {
+    if (viewMode !== 'grid' || !trimmedSearchQuery || !gridSearchFocusShelf || viewport.x === 0 || viewport.y === 0) {
+      lastSearchFocusKeyRef.current = null;
+      return;
+    }
+
+    const focusKey = `${trimmedSearchQuery}:${gridSearchFocusShelf.id}`;
+    if (lastSearchFocusKeyRef.current === focusKey) {
+      return;
+    }
+
+    lastSearchFocusKeyRef.current = focusKey;
+    applyTransform(getShelfFocusTransform(gridSearchFocusShelf, viewport, fitScale));
+  }, [fitScale, gridSearchFocusShelf, trimmedSearchQuery, viewMode, viewport]);
 
   function zoomToFit() {
     if (viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
@@ -1699,7 +1770,7 @@ export default function BoardScreen() {
 
   return (
     <Screen style={{ paddingBottom: 118 }}>
-      <AppHeader onPressSearch={handleToggleSearch} searchIconName={isSearchVisible ? 'x' : 'search'} />
+      <AppHeader onPressSearch={handleToggleSearch} searchIconName={isSearchVisible ? 'x' : 'search'} searchButtonTestID="board-search-open-button" />
 
       {isSearchVisible ? (
         <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md }}>
@@ -1719,6 +1790,7 @@ export default function BoardScreen() {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
+              testID="board-search-input"
               placeholder="Search shelf names, titles, thoughts, or labels"
               placeholderTextColor={theme.colors.textMuted}
               autoCapitalize="none"
@@ -1781,9 +1853,10 @@ export default function BoardScreen() {
         </View>
       ) : null}
 
-      {trimmedSearchQuery ? (
+      {trimmedSearchQuery && viewMode === 'list' ? (
         <View style={{ flex: 1 }}>
-          <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }} testID="board-search-summary">
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
             <Text style={[textStyles.titleMd, { marginBottom: 4 }]}>{`"${trimmedSearchQuery}"`}</Text>
             <Text style={textStyles.bodySm}>
@@ -1831,9 +1904,9 @@ export default function BoardScreen() {
         </View>
       ) : null}
 
-      {!trimmedSearchQuery && (resolvedShelves.length > 0 || resolvedStacks.length > 0) ? (
+      {(!trimmedSearchQuery || viewMode === 'grid') && (resolvedShelves.length > 0 || resolvedStacks.length > 0) ? (
         <View style={{ flex: 1 }}>
-          {isOrganizationMapVisible ? (
+          {!trimmedSearchQuery && isOrganizationMapVisible ? (
             <BoardOrientationCard
               shelfCount={resolvedShelves.length}
               stackCount={resolvedStacks.length}
@@ -1845,7 +1918,7 @@ export default function BoardScreen() {
           ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
             <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-            {!isOrganizationMapVisible ? (
+            {!trimmedSearchQuery && !isOrganizationMapVisible ? (
               <Pressable
                 onPress={() => setIsOrganizationMapVisible(true)}
                 accessibilityRole="button"
@@ -1870,10 +1943,23 @@ export default function BoardScreen() {
 
           {viewMode === 'grid' ? (
             <>
+              {trimmedSearchQuery ? (
+                <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md }} testID="board-search-summary">
+                  <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
+                  <Text style={[textStyles.titleMd, { marginBottom: 4 }]} numberOfLines={1}>{`"${trimmedSearchQuery}"`}</Text>
+                  <Text style={textStyles.bodySm}>
+                    {matchingShelves.length} shelf match{matchingShelves.length === 1 ? '' : 'es'} and {matchingSnaps.length} snap result{matchingSnaps.length === 1 ? '' : 's'}.
+                    {gridSearchFocusShelf ? ` Zoomed to ${gridSearchFocusShelf.name}.` : ' No Shelf on the Board to zoom to.'}
+                  </Text>
+                  {trayOnlySearchResultCount > 0 ? (
+                    <Text style={[textStyles.bodySm, { marginTop: theme.spacing.xs }]}>{trayOnlySearchResultCount} result{trayOnlySearchResultCount === 1 ? '' : 's'} live in The Tray.</Text>
+                  ) : null}
+                </SurfaceCard>
+              ) : null}
               <View
                 style={{ marginBottom: theme.spacing.md }}
               >
-                <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Pinch or use controls to zoom. Drag Shelves to arrange the system.</Text>
+                <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>{trimmedSearchQuery ? 'Matching Shelves are highlighted. Clear search to return to arranging the full Board.' : 'Pinch or use controls to zoom. Drag Shelves to arrange the system.'}</Text>
               </View>
               <View
                 onLayout={(event) => {
@@ -1965,6 +2051,7 @@ export default function BoardScreen() {
                         key={shelf.id}
                         shelf={shelf}
                         scale={boardTransform.scale}
+                        isHighlighted={trimmedSearchQuery ? matchingShelfIds.has(shelf.id) : false}
                         coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
                         coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                         onPress={() => router.push(`/shelf/${shelf.id}`)}
@@ -2043,6 +2130,7 @@ export default function BoardScreen() {
 
           <Pressable
             onPress={() => setIsCreateActionVisible(true)}
+            testID="board-add-button"
             style={{
               position: 'absolute',
               right: 0,

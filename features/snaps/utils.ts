@@ -15,3 +15,10 @@ export function resolveSnapImageUri(snap: Snap): string | null {
 export async function deleteSnapImageLocally(localPath: string | null) {
   await deleteImageLocally(localPath);
 }
+
+export function parseSnapLabels(value: string) {
+  return value
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean);
+}

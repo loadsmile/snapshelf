@@ -4,6 +4,7 @@ import { Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { createSnap, saveSnapImageLocally } from '@/features/snaps/api';
 import type { SnapSource } from '@/features/snaps/types';
+import { parseSnapLabels } from '@/features/snaps/utils';
 import type { Shelf } from '@/features/shelves/types';
 import { FormField } from '@/shared/components/FormField';
 import { PillButton } from '@/shared/components/PillButton';
@@ -24,11 +25,47 @@ type CreateSnapModalProps = {
   onCreated?: () => void;
 };
 
-function parseLabels(value: string) {
-  return value
-    .split(',')
-    .map((label) => label.trim())
-    .filter(Boolean);
+const sourceCopy: Record<SnapSource, { description: string; imagePrompt: string; thoughtPlaceholder: string; labelsPlaceholder: string }> = {
+  'camera-roll': {
+    description: 'Pick an image from your library. Title, thought, labels, and Shelf are optional context for finding it later.',
+    imagePrompt: 'Choose image from library',
+    thoughtPlaceholder: 'What should future you remember about this?',
+    labelsPlaceholder: 'interiors, lighting, client idea',
+  },
+  instagram: {
+    description: 'Save the image now, then add the few details that will make it easy to find later.',
+    imagePrompt: 'Choose saved image',
+    thoughtPlaceholder: 'What caught your eye?',
+    labelsPlaceholder: 'style, color, wishlist',
+  },
+  manual: {
+    description: 'Add a visual reference directly to this Shelf. A short thought or label can make it easier to retrieve later.',
+    imagePrompt: 'Choose image for this Shelf',
+    thoughtPlaceholder: 'Why does this belong here?',
+    labelsPlaceholder: 'mood, material, layout',
+  },
+  'quick-snap': {
+    description: 'Capture now and organize later. Add only the context you already know.',
+    imagePrompt: 'Choose image for Quick Snap',
+    thoughtPlaceholder: 'Why did you save this?',
+    labelsPlaceholder: 'inspiration, kitchen, color',
+  },
+  'web-clip': {
+    description: 'Save a visual reference from the web with just enough context to find it again.',
+    imagePrompt: 'Choose image from the web clip',
+    thoughtPlaceholder: 'What page, product, or idea is this for?',
+    labelsPlaceholder: 'source, product, reference',
+  },
+  unknown: {
+    description: 'Save the image now. Title, thought, labels, and Shelf can all stay optional.',
+    imagePrompt: 'Choose image',
+    thoughtPlaceholder: 'What should this remind you of?',
+    labelsPlaceholder: 'inspiration, room, idea',
+  },
+};
+
+function getImageErrorMessage(source: SnapSource) {
+  return source === 'manual' ? 'Choose an image before adding this Snap to the Shelf.' : 'Choose an image before saving this Snap.';
 }
 
 export function CreateSnapModal({
@@ -67,11 +104,13 @@ export function CreateSnapModal({
 
   const destinationLabel = useMemo(() => {
     if (!selectedShelfId) {
-      return 'Saving to The Tray';
+      return 'The Tray';
     }
 
     return shelves.find((shelf) => shelf.id === selectedShelfId)?.name ?? 'Selected Shelf';
   }, [selectedShelfId, shelves]);
+
+  const copy = sourceCopy[source];
 
   async function handlePickImage() {
     try {
@@ -92,6 +131,8 @@ export function CreateSnapModal({
 
       if (!result.canceled && result.assets[0]?.uri) {
         setImageUri(result.assets[0].uri);
+      } else if (!result.canceled) {
+        setError('SnapShelf could not read that image. Try choosing it again.');
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to open the photo library.');
@@ -107,7 +148,7 @@ export function CreateSnapModal({
     }
 
     if (!imageUri) {
-      setError('Choose an image first.');
+      setError(getImageErrorMessage(source));
       return;
     }
 
@@ -120,7 +161,7 @@ export function CreateSnapModal({
         shelfId: selectedShelfId,
         title: title.trim() || null,
         thought: thought.trim() || null,
-        labels: parseLabels(labels),
+        labels: parseSnapLabels(labels),
         source,
         capturedAt: new Date(),
         imageUrl: null,
@@ -136,6 +177,10 @@ export function CreateSnapModal({
     }
   }
 
+  if (!visible) {
+    return null;
+  }
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable
@@ -148,12 +193,14 @@ export function CreateSnapModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard style={{ maxHeight: '92%', padding: theme.spacing.lg }}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{titleText}</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Choose an image, add a little context, and save it to The Tray or directly into a Shelf.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{copy.description}</Text>
 
             <Pressable
               onPress={handlePickImage}
+              testID="create-snap-image-picker"
               style={{
                 backgroundColor: theme.colors.background,
                 borderRadius: theme.radii.lg,
@@ -174,13 +221,14 @@ export function CreateSnapModal({
                   onError={() => setError('SnapShelf cannot preview that image. Try choosing it again.')}
                 />
               ) : (
-                <Text style={textStyles.bodyMd}>{isPicking ? 'Opening library...' : 'Choose image from library'}</Text>
+                <Text style={textStyles.bodyMd}>{isPicking ? 'Opening library...' : copy.imagePrompt}</Text>
               )}
             </Pressable>
 
-            <FormField label="Title" value={title} onChangeText={setTitle} placeholder="Scandinavian living room inspiration" />
-            <FormField label="Thought" value={thought} onChangeText={setThought} placeholder="A quick note about why this matters" multiline style={{ minHeight: 96, textAlignVertical: 'top' }} />
-            <FormField label="Labels" value={labels} onChangeText={setLabels} placeholder="Interior Design, Mood Board" />
+            <FormField label="Title" value={title} onChangeText={setTitle} testID="create-snap-title-input" placeholder="Scandinavian living room inspiration" returnKeyType="next" />
+            <FormField label="Thought" value={thought} onChangeText={setThought} testID="create-snap-thought-input" placeholder={copy.thoughtPlaceholder} multiline style={{ minHeight: 96, textAlignVertical: 'top' }} />
+            <FormField label="Labels" value={labels} onChangeText={setLabels} testID="create-snap-labels-input" placeholder={copy.labelsPlaceholder} autoCapitalize="none" />
+            <Text style={[textStyles.bodySm, { color: theme.colors.textMuted, marginTop: -theme.spacing.sm, marginBottom: theme.spacing.md }]}>Separate labels with commas. A few plain words work best.</Text>
 
             {!lockShelfSelection ? (
               <View style={{ marginBottom: theme.spacing.md }}>
@@ -192,6 +240,7 @@ export function CreateSnapModal({
                     size="sm"
                     onPress={() => setSelectedShelfId(null)}
                     disabled={isSubmitting}
+                    testID="create-snap-destination-tray"
                   />
                   {shelves.map((shelf) => (
                     <PillButton
@@ -201,25 +250,27 @@ export function CreateSnapModal({
                       size="sm"
                       onPress={() => setSelectedShelfId(shelf.id)}
                       disabled={isSubmitting}
+                      testID={`create-snap-destination-shelf-${shelf.id}`}
                     />
                   ))}
                 </ScrollView>
-                <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{destinationLabel}</Text>
+                <Text style={[textStyles.bodySm, { marginTop: 8 }]}>Saving to {destinationLabel}. {selectedShelfId ? 'This Snap will skip The Tray.' : 'You can sort it later.'}</Text>
               </View>
             ) : (
               <View style={{ marginBottom: theme.spacing.md }}>
                 <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Destination</Text>
-                <Text style={textStyles.bodyMd}>{destinationLabel}</Text>
+                <Text style={textStyles.bodyMd}>Saving to {destinationLabel}.</Text>
               </View>
             )}
 
             {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
 
-            <PillButton label={isSubmitting ? 'Saving Snap...' : submitLabel} icon="image" fullWidth onPress={handleSubmit} disabled={isSubmitting || isPicking} />
+            <PillButton label={isSubmitting ? 'Saving Snap...' : submitLabel} icon="image" fullWidth onPress={handleSubmit} disabled={isSubmitting || isPicking} testID="create-snap-save-button" />
 
             <View style={{ marginTop: theme.spacing.sm }}>
               <PillButton label="Cancel" variant="secondary" fullWidth onPress={onClose} disabled={isSubmitting} />
             </View>
+            </ScrollView>
           </SurfaceCard>
         </Pressable>
       </Pressable>

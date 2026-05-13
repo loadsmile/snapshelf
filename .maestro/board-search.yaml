@@ -1,0 +1,27 @@
+appId: com.anonymous.snapshelf
+---
+- launchApp
+- assertVisible: SnapShelf
+- tapOn:
+    id: tab-settings
+- scrollUntilVisible:
+    element:
+      id: settings-seed-sample-data-button
+    direction: DOWN
+- tapOn:
+    id: settings-seed-sample-data-button
+- waitForAnimationToEnd
+- tapOn:
+    id: tab-board
+- assertVisible: Board
+- tapOn:
+    id: board-search-open-button
+- tapOn:
+    id: board-search-input
+- inputText: chair
+- assertVisible:
+    id: board-search-summary
+- tapOn:
+    id: board-view-grid-toggle
+- assertVisible:
+    id: board-search-summary

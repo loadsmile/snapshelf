@@ -345,6 +345,9 @@ export default function ShelfViewScreen() {
       setDeletingSnapId(snap.id);
       setError(null);
       await deleteSnap(user.id, snap.id, snap.localPath, snap.shelfId);
+      if (detailSnap?.id === snap.id) {
+        setDetailSnap(null);
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to delete this Snap right now.');
     } finally {
@@ -362,6 +365,9 @@ export default function ShelfViewScreen() {
       setMovingSnapId(snap.id);
       setError(null);
       await moveSnapToShelf(user.id, snap.id, null);
+      if (detailSnap?.id === snap.id) {
+        setDetailSnap(null);
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to move this Snap to The Tray right now.');
     } finally {
@@ -395,6 +401,7 @@ export default function ShelfViewScreen() {
       setFavoriteSnapId(snap.id);
       setError(null);
       await setSnapFavorite(user.id, snap.id, !snap.isFavorite);
+      setDetailSnap((current) => (current?.id === snap.id ? { ...current, isFavorite: !snap.isFavorite } : current));
       setActionSnap(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
@@ -412,6 +419,7 @@ export default function ShelfViewScreen() {
       setArchivingSnapId(snap.id);
       setError(null);
       await setSnapArchived(user.id, snap.id, !snap.isArchived);
+      setDetailSnap((current) => (current?.id === snap.id ? { ...current, isArchived: !snap.isArchived } : current));
       setActionSnap(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to update this Snap right now.');
@@ -689,7 +697,7 @@ export default function ShelfViewScreen() {
                   },
                 },
                 {
-                  label: actionSnap.isArchived ? 'Restore to Active' : 'Archive Snap',
+                  label: actionSnap.isArchived ? 'Restore Snap' : 'Archive Snap',
                   icon: actionSnap.isArchived ? 'rotate-ccw' : 'archive',
                   disabled: isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || archivingSnapId !== null,
                   loading: archivingSnapId === actionSnap.id,
@@ -763,9 +771,15 @@ export default function ShelfViewScreen() {
         snap={detailSnap}
         shelves={shelves}
         isSaving={savingSnapId === detailSnap?.id}
+        isFavoriteLoading={favoriteSnapId === detailSnap?.id}
+        isArchiveLoading={archivingSnapId === detailSnap?.id}
+        isDeleteLoading={deletingSnapId === detailSnap?.id}
         error={activeError}
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
+        onToggleFavorite={handleToggleFavorite}
+        onToggleArchived={handleToggleArchived}
+        onDelete={handleConfirmDeleteSnap}
       />
 
       <ShelfCoverModal

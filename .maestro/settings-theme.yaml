@@ -1,0 +1,12 @@
+appId: com.anonymous.snapshelf
+---
+- launchApp
+- assertVisible: SnapShelf
+- tapOn:
+    id: tab-settings
+- assertVisible: Appearance
+- assertVisible:
+    id: settings-theme-toggle
+- tapOn:
+    id: settings-theme-toggle
+- assertVisible: Dark Mode

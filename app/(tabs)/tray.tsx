@@ -142,7 +142,7 @@ function TraySnapRow({
             onPress={onMove}
           />
           <TriageActionButton
-            label={snap.isFavorite ? 'Saved' : 'Fav'}
+            label={snap.isFavorite ? 'Remove' : 'Favorite'}
             icon={snap.isFavorite ? 'heart' : 'star'}
             disabled={isBusy}
             loading={isBusy && busyAction === 'favorite'}
@@ -247,7 +247,7 @@ export default function TrayScreen() {
         setSelectedSnap(null);
       }
 
-      if (mutation === 'edit' && detailSnap?.id === snap.id) {
+      if ((mutation === 'edit' || mutation === 'archive' || mutation === 'delete') && detailSnap?.id === snap.id) {
         setDetailSnap(null);
       }
     } catch (nextError) {
@@ -299,6 +299,7 @@ export default function TrayScreen() {
 
     await runSnapMutation(snap, 'favorite', async () => {
       await setSnapFavorite(user.id, snap.id, !snap.isFavorite);
+      setDetailSnap((current) => (current?.id === snap.id ? { ...current, isFavorite: !snap.isFavorite } : current));
     });
   }
 
@@ -444,10 +445,14 @@ export default function TrayScreen() {
 
       <Pressable
         onPress={() => setIsCreateSnapVisible(true)}
+        testID="create-snap-open-button"
+        accessibilityRole="button"
+        accessibilityLabel="Create Quick Snap"
         style={{
           position: 'absolute',
           right: theme.spacing.xl,
           bottom: 118,
+          zIndex: 10,
           width: 56,
           height: 56,
           borderRadius: 28,
@@ -458,6 +463,7 @@ export default function TrayScreen() {
           shadowOpacity: 0.28,
           shadowRadius: 16,
           shadowOffset: { width: 0, height: 10 },
+          elevation: 12,
         }}
       >
         <Feather name="camera" size={20} color={theme.colors.surface} />
@@ -501,9 +507,15 @@ export default function TrayScreen() {
         snap={detailSnap}
         shelves={shelves}
         isSaving={busySnapId === detailSnap?.id && busyAction === 'edit'}
+        isFavoriteLoading={busySnapId === detailSnap?.id && busyAction === 'favorite'}
+        isArchiveLoading={busySnapId === detailSnap?.id && busyAction === 'archive'}
+        isDeleteLoading={busySnapId === detailSnap?.id && busyAction === 'delete'}
         error={activeError}
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
+        onToggleFavorite={handleToggleFavorite}
+        onToggleArchived={handleArchiveSnap}
+        onDelete={handleConfirmDeleteSnap}
       />
     </Screen>
   );

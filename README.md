@@ -55,8 +55,28 @@ npm start
 - `npm run typecheck` - run TypeScript checks
 - `npm test` - run unit tests
 
+## Maestro Smoke Tests
+
+First-pass E2E smoke flows live in `.maestro/`. Install Maestro, start the app on a simulator or connected device, sign in with a disposable Firebase test account, then run:
+
+```bash
+maestro test .maestro
+```
+
+Use `Maestro.md` for local setup, test credential guidance, and device assumptions. The committed flows preserve local-first media storage and avoid destructive account deletion or real user data cleanup.
+
+Recommended next E2E additions are documented in `Maestro.md`: fixture-image Create Snap saves, Tray triage, Library search/filter coverage, Snap detail edits, iOS parity, CI scope, and a safe test data reset strategy.
+
 ## Notes
 
 - Snap images are saved locally with `expo-file-system` under the app document directory.
 - Cross-device media sync is not implemented yet.
 - Additional architecture notes live in `TECHNICAL_OVERVIEW.md`.
+
+## V1 Local-First Limitations
+
+- Snap metadata syncs through Firestore, but Snap image files stay on the device where they were saved.
+- Signing in on another device can show synced Snap records without their local image files until media sync is added.
+- Reinstalling the app, clearing app data, or restoring only Firestore data can leave Snap records without local media.
+- Deleting a Snap removes its local file on the current device through the local-first delete flow; there is no Firebase Storage cleanup because image uploads are not enabled.
+- Share intent behavior depends on OS-level handoff and file permissions, so image saves should be verified on real iOS and Android targets before release.
