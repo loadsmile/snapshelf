@@ -11,7 +11,9 @@ import { deleteSnap, moveSnapToShelf, setSnapArchived, setSnapFavorite, updateSn
 import type { Snap, UpdateSnapInput } from '@/features/snaps/types';
 import { deleteShelf, getShelf, saveShelfCoverImageLocally, subscribeToShelves, updateShelfCover } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
-import { setShelfAnchor, subscribeToThreads } from '@/features/threads/api';
+import { subscribeToStacks } from '@/features/stacks/api';
+import type { Stack } from '@/features/stacks/types';
+import { setShelfStack, subscribeToThreads } from '@/features/threads/api';
 import type { ShelfThread } from '@/features/threads/types';
 import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
 import { CreateSnapModal } from '@/shared/components/CreateSnapModal';
@@ -115,6 +117,7 @@ export default function ShelfViewScreen() {
   const { user } = useAuth();
   const [shelf, setShelf] = useState<Shelf | null>(null);
   const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [stacks, setStacks] = useState<Stack[]>([]);
   const [threads, setThreads] = useState<ShelfThread[]>([]);
   const [isLoadingShelf, setIsLoadingShelf] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +195,25 @@ export default function ShelfViewScreen() {
 
   useEffect(() => {
     if (!user?.id) {
+      setStacks([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToStacks(
+      user.id,
+      (nextStacks) => {
+        setStacks(nextStacks);
+      },
+      (nextError) => {
+        setError(nextError.message);
+      },
+    );
+
+    return unsubscribe;
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
       setThreads([]);
       return;
     }
@@ -223,8 +245,12 @@ export default function ShelfViewScreen() {
   const title = useMemo(() => shelf?.name ?? 'Shelf View', [shelf?.name]);
   const currentThread = useMemo(() => threads.find((thread) => thread.toShelfId === id) ?? null, [id, threads]);
   const anchorShelf = useMemo(
-    () => shelves.find((entry) => entry.id === currentThread?.fromShelfId) ?? null,
-    [currentThread?.fromShelfId, shelves],
+    () => (currentThread?.fromType === 'shelf' ? shelves.find((entry) => entry.id === currentThread.fromId) ?? null : null),
+    [currentThread, shelves],
+  );
+  const stack = useMemo(
+    () => (currentThread?.fromType === 'stack' ? stacks.find((entry) => entry.id === currentThread.fromId) ?? null : null),
+    [currentThread, stacks],
   );
   const latestSnap = useMemo(() => getLatestSnap(snaps), [snaps]);
   const coverSnap = useMemo(() => (shelf ? getShelfCoverSnap(shelf, snaps) : null), [shelf, snaps]);
@@ -233,7 +259,7 @@ export default function ShelfViewScreen() {
   const shelfHighlights = useMemo(() => getShelfHighlights(snaps), [snaps]);
   const activeError = error ?? snapsError;
 
-  async function handleSaveThread(anchorShelfId: string | null) {
+  async function handleSaveThread(stackId: string | null) {
     if (!user?.id || !id) {
       return;
     }
@@ -241,7 +267,7 @@ export default function ShelfViewScreen() {
     try {
       setIsSavingThread(true);
       setThreadError(null);
-      await setShelfAnchor(user.id, id, anchorShelfId);
+      await setShelfStack(user.id, id, stackId);
       setIsEditThreadVisible(false);
     } catch (nextError) {
       setThreadError(nextError instanceof Error ? nextError.message : 'Unable to update this thread right now.');
@@ -502,7 +528,17 @@ export default function ShelfViewScreen() {
             justifyContent: 'flex-end',
           }}
         >
-          <View style={{ alignSelf: 'flex-start', borderRadius: theme.radii.pill, backgroundColor: 'rgba(255,255,255,0.82)', paddingHorizontal: 12, paddingVertical: 8 }}>
+          <View
+            style={{
+              alignSelf: 'flex-start',
+              borderRadius: theme.radii.pill,
+              backgroundColor: theme.colors.surfaceSoft,
+              borderWidth: 1,
+              borderColor: theme.colors.borderSoft,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+            }}
+          >
             <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{coverImageUri ? 'Manual cover' : coverSnap ? 'Snap cover' : 'No cover set'}</Text>
           </View>
         </SnapArtwork>
@@ -525,10 +561,10 @@ export default function ShelfViewScreen() {
       </SurfaceCard>
 
       <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Anchor Shelf</Text>
-        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{anchorShelf ? `Threaded from ${anchorShelf.name}` : 'Independent Shelf'}</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{anchorShelf ? 'This Shelf has a visible thread on the Board, so its relationship to the anchor is easy to remember.' : 'Leave this Shelf independent, or choose an Anchor Shelf to draw a visible thread on the Board.'}</Text>
-        <PillButton label="Edit Thread" icon="link" onPress={() => setIsEditThreadVisible(true)} fullWidth disabled={isDeletingShelf} />
+        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stack</Text>
+        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{stack ? `Stacked under ${stack.name}` : anchorShelf ? `Legacy thread from ${anchorShelf.name}` : 'Independent Shelf'}</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{stack ? 'This Shelf is grouped under a visual Stack on the Board.' : 'Leave this Shelf independent, or choose a Stack to group it visually on the Board.'}</Text>
+        <PillButton label="Edit Stack" icon="layers" onPress={() => setIsEditThreadVisible(true)} fullWidth disabled={isDeletingShelf} />
       </SurfaceCard>
 
       {activeError ? (
@@ -701,8 +737,8 @@ export default function ShelfViewScreen() {
                   },
                 },
                 {
-                  label: 'Edit Thread',
-                  icon: 'link',
+                  label: 'Edit Stack',
+                  icon: 'layers',
                   disabled: isDeletingShelf,
                   onPress: () => {
                     setIsShelfMenuVisible(false);
@@ -761,7 +797,9 @@ export default function ShelfViewScreen() {
       <EditThreadModal
         visible={isEditThreadVisible}
         shelves={shelves}
-        currentAnchorShelfId={anchorShelf?.id ?? null}
+        stacks={stacks}
+        currentStackId={stack?.id ?? null}
+        legacyAnchorShelfName={anchorShelf?.name ?? null}
         currentShelfId={id}
         isSubmitting={isSavingThread}
         error={threadError}

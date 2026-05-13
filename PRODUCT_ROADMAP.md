@@ -16,10 +16,12 @@ Already completed:
 - Library is the trusted retrieval surface with search, filters, sorting, result copy, chips, and empty states.
 - The Tray is the compact triage queue with direct Move, Favorite, Archive, and Delete actions.
 - Board and Shelf views now explain the organization model and make Shelves feel more meaningful.
+- Stacks now act as visual-only Board organizers: Shelves can be stacked under a parent visual node without the parent becoming a Shelf or Snap container.
 - Settings is focused on account/profile/security/dev tools rather than setup scaffolding.
 - Snap media is compressed and saved locally; deletion and account deletion clean up local image files idempotently.
 - Local media failures now have graceful UI fallbacks, clearer save errors, and a dev-only health check in Settings.
 - Appearance supports a persisted light/dark toggle, with Midnight Archive as the warm dark palette and the SnapShelf title retaining its original brand color and font.
+- Stack covers support manual local images, preserving the local-first media model while making Board organization more visual.
 
 Important constraint:
 
@@ -63,6 +65,25 @@ Why this matters:
 
 - A reliable dark mode makes the product feel more polished and usable across lighting contexts.
 - Keeping the brand title stable preserves recognizability while the rest of the interface adapts.
+
+### Completed: Visual Board Stacks
+
+Product goal: separate visual Board organization from Shelf contents so parent nodes do not behave like Snap containers.
+
+Completed outcomes:
+
+- Added Firestore-backed Stacks as visual-only Board nodes with positions and manual local cover images.
+- Updated Board creation so users can add either a Shelf or a Stack.
+- Updated Shelf creation and Shelf detail assignment so each Shelf can belong to one Stack, while a Stack can organize multiple Shelves.
+- Extended thread metadata to support Stack-to-Shelf links while preserving legacy Shelf-to-Shelf thread rendering.
+- Reworked Stack nodes with a primary-color frame, overlapping primary label, manual cover support, and a clean no-cover placeholder.
+- Kept Snaps scoped to Shelves and The Tray; Stacks do not appear as Snap destinations.
+- Verified typecheck and tests.
+
+Why this matters:
+
+- Users can organize the Board visually without creating empty parent Shelves that imply they should hold Snaps.
+- Keeping Stacks separate from Shelves clarifies the mental model: Snaps live in Shelves, Shelves can be arranged into Stacks, and Library finds everything.
 
 ## Next 3 Sessions
 

@@ -1,6 +1,6 @@
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 
-import type { CreateShelfThreadInput, ShelfThread } from '@/features/threads/types';
+import type { CreateShelfThreadInput, ShelfThread, ShelfThreadAnchorType } from '@/features/threads/types';
 import { requireDb } from '@/services/firebase';
 
 function toDate(value: unknown) {
@@ -8,9 +8,17 @@ function toDate(value: unknown) {
 }
 
 function mapThread(id: string, data: Record<string, unknown>): ShelfThread {
+  const legacyFromShelfId = typeof data.fromShelfId === 'string' ? data.fromShelfId : '';
+  const fromStackId = typeof data.fromStackId === 'string' ? data.fromStackId : null;
+  const fromType: ShelfThreadAnchorType = data.fromType === 'stack' || fromStackId ? 'stack' : 'shelf';
+  const fromId = typeof data.fromId === 'string' ? data.fromId : fromType === 'stack' ? fromStackId ?? '' : legacyFromShelfId;
+
   return {
     id,
-    fromShelfId: typeof data.fromShelfId === 'string' ? data.fromShelfId : '',
+    fromType,
+    fromId,
+    fromShelfId: legacyFromShelfId,
+    fromStackId,
     toShelfId: typeof data.toShelfId === 'string' ? data.toShelfId : '',
     createdAt: toDate(data.createdAt),
   };
@@ -18,15 +26,28 @@ function mapThread(id: string, data: Record<string, unknown>): ShelfThread {
 
 export async function createShelfThread(userId: string, input: CreateShelfThreadInput): Promise<ShelfThread> {
   const db = requireDb();
+  const fromType: ShelfThreadAnchorType = input.fromStackId ? 'stack' : 'shelf';
+  const fromId = input.fromStackId ?? input.fromShelfId ?? '';
+
+  if (!fromId) {
+    throw new Error('Thread anchor is required.');
+  }
+
   const created = await addDoc(collection(db, 'users', userId, 'threads'), {
-    fromShelfId: input.fromShelfId,
+    fromType,
+    fromId,
+    fromShelfId: input.fromShelfId ?? null,
+    fromStackId: input.fromStackId ?? null,
     toShelfId: input.toShelfId,
     createdAt: serverTimestamp(),
   });
 
   return {
     id: created.id,
-    fromShelfId: input.fromShelfId,
+    fromType,
+    fromId,
+    fromShelfId: input.fromShelfId ?? '',
+    fromStackId: input.fromStackId ?? null,
     toShelfId: input.toShelfId,
     createdAt: null,
   };
@@ -58,6 +79,32 @@ export async function deleteThreadsForShelf(userId: string, shelfId: string): Pr
   await Promise.all(deletes);
 }
 
+export async function deleteThreadsForStack(userId: string, stackId: string): Promise<void> {
+  const db = requireDb();
+  const collectionRef = collection(db, 'users', userId, 'threads');
+  const [modernThreads, legacyThreads] = await Promise.all([
+    getDocs(query(collectionRef, where('fromId', '==', stackId))),
+    getDocs(query(collectionRef, where('fromStackId', '==', stackId))),
+  ]);
+
+  const seenThreadIds = new Set<string>();
+  const deletes = [...modernThreads.docs, ...legacyThreads.docs].flatMap((thread) => {
+    if (seenThreadIds.has(thread.id)) {
+      return [];
+    }
+
+    const data = thread.data();
+    if (data.fromType !== 'stack' && data.fromStackId !== stackId) {
+      return [];
+    }
+
+    seenThreadIds.add(thread.id);
+    return [deleteDoc(thread.ref)];
+  });
+
+  await Promise.all(deletes);
+}
+
 export async function setShelfAnchor(userId: string, shelfId: string, anchorShelfId: string | null): Promise<void> {
   const db = requireDb();
   const existingThreads = await getDocs(query(collection(db, 'users', userId, 'threads'), where('toShelfId', '==', shelfId)));
@@ -69,7 +116,30 @@ export async function setShelfAnchor(userId: string, shelfId: string, anchorShel
   }
 
   await addDoc(collection(db, 'users', userId, 'threads'), {
+    fromType: 'shelf',
+    fromId: anchorShelfId,
     fromShelfId: anchorShelfId,
+    fromStackId: null,
+    toShelfId: shelfId,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function setShelfStack(userId: string, shelfId: string, stackId: string | null): Promise<void> {
+  const db = requireDb();
+  const existingThreads = await getDocs(query(collection(db, 'users', userId, 'threads'), where('toShelfId', '==', shelfId)));
+
+  await Promise.all(existingThreads.docs.map((thread) => deleteDoc(thread.ref)));
+
+  if (!stackId) {
+    return;
+  }
+
+  await addDoc(collection(db, 'users', userId, 'threads'), {
+    fromType: 'stack',
+    fromId: stackId,
+    fromShelfId: null,
+    fromStackId: stackId,
     toShelfId: shelfId,
     createdAt: serverTimestamp(),
   });
@@ -83,7 +153,7 @@ export function subscribeToThreads(userId: string, callback: (threads: ShelfThre
     (snapshot) => {
       const threads = snapshot.docs
         .map((entry) => mapThread(entry.id, entry.data()))
-        .filter((thread) => thread.fromShelfId && thread.toShelfId);
+        .filter((thread) => thread.fromId && thread.toShelfId);
 
       callback(threads);
     },

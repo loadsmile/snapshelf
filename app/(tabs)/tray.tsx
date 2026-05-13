@@ -272,7 +272,7 @@ export default function TrayScreen() {
     });
   }
 
-  async function handleCreateShelf(input: { name: string; anchorShelfId: string | null }) {
+  async function handleCreateShelf(input: { name: string; stackId: string | null }) {
     if (!user?.id) {
       return;
     }

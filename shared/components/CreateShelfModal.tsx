@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import type { Shelf } from '@/features/shelves/types';
+import type { Stack } from '@/features/stacks/types';
 import { FormField } from '@/shared/components/FormField';
 import { PillButton } from '@/shared/components/PillButton';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
@@ -11,29 +12,30 @@ import { textStyles } from '@/shared/theme/typography';
 type CreateShelfModalProps = {
   visible: boolean;
   shelves: Shelf[];
+  stacks?: Stack[];
   isSubmitting?: boolean;
   error?: string | null;
   onClose: () => void;
-  onSubmit: (input: { name: string; anchorShelfId: string | null }) => Promise<void> | void;
+  onSubmit: (input: { name: string; stackId: string | null }) => Promise<void> | void;
 };
 
-export function CreateShelfModal({ visible, shelves = [], isSubmitting = false, error, onClose, onSubmit }: CreateShelfModalProps) {
+export function CreateShelfModal({ visible, stacks = [], isSubmitting = false, error, onClose, onSubmit }: CreateShelfModalProps) {
   const [name, setName] = useState('');
-  const [anchorShelfId, setAnchorShelfId] = useState<string | null>(null);
+  const [stackId, setStackId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const anchorLabel = useMemo(() => {
-    if (!anchorShelfId) {
-      return 'No Thread Yet';
+  const stackLabel = useMemo(() => {
+    if (!stackId) {
+      return 'No Stack Yet';
     }
 
-    return shelves.find((shelf) => shelf.id === anchorShelfId)?.name ?? 'Anchor Shelf';
-  }, [anchorShelfId, shelves]);
+    return stacks.find((stack) => stack.id === stackId)?.name ?? 'Stack';
+  }, [stackId, stacks]);
 
   useEffect(() => {
     if (visible) {
       setName('');
-      setAnchorShelfId(null);
+      setStackId(null);
       setLocalError(null);
     }
   }, [visible]);
@@ -47,7 +49,7 @@ export function CreateShelfModal({ visible, shelves = [], isSubmitting = false, 
     }
 
     setLocalError(null);
-    await onSubmit({ name: trimmed, anchorShelfId });
+    await onSubmit({ name: trimmed, stackId });
   }
 
   return (
@@ -64,32 +66,32 @@ export function CreateShelfModal({ visible, shelves = [], isSubmitting = false, 
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Shelf</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this collection a name, then decide whether it should start from another Shelf on the Board.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this collection a name, then decide whether it belongs in a Stack on the Board.</Text>
 
             <FormField label="Shelf Name" value={name} onChangeText={setName} placeholder="Weekend Stays" autoCapitalize="words" />
 
             <View style={{ marginBottom: theme.spacing.md }}>
-              <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Anchor Shelf</Text>
+              <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Stack</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
                 <PillButton
-                  label="No Thread Yet"
-                  variant={anchorShelfId === null ? 'primary' : 'secondary'}
+                  label="No Stack Yet"
+                  variant={stackId === null ? 'primary' : 'secondary'}
                   size="sm"
-                  onPress={() => setAnchorShelfId(null)}
+                  onPress={() => setStackId(null)}
                   disabled={isSubmitting}
                 />
-                {shelves.map((shelf) => (
+                {stacks.map((stack) => (
                   <PillButton
-                    key={shelf.id}
-                    label={shelf.name}
-                    variant={anchorShelfId === shelf.id ? 'primary' : 'secondary'}
+                    key={stack.id}
+                    label={stack.name}
+                    variant={stackId === stack.id ? 'primary' : 'secondary'}
                     size="sm"
-                    onPress={() => setAnchorShelfId(shelf.id)}
+                    onPress={() => setStackId(stack.id)}
                     disabled={isSubmitting}
                   />
                 ))}
               </ScrollView>
-              <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{anchorShelfId ? `Thread this Shelf from ${anchorLabel}.` : 'Keep this Shelf independent for now.'}</Text>
+              <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{stackId ? `Stack this Shelf under ${stackLabel}.` : 'Keep this Shelf independent for now.'}</Text>
             </View>
 
             {localError || error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{localError ?? error}</Text> : null}

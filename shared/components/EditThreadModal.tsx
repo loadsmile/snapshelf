@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import type { Shelf } from '@/features/shelves/types';
+import type { Stack } from '@/features/stacks/types';
 import { PillButton } from '@/shared/components/PillButton';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { theme } from '@/shared/theme';
@@ -10,36 +11,33 @@ import { textStyles } from '@/shared/theme/typography';
 type EditThreadModalProps = {
   visible: boolean;
   shelves: Shelf[];
-  currentAnchorShelfId: string | null;
+  stacks?: Stack[];
+  currentStackId: string | null;
+  legacyAnchorShelfName?: string | null;
   currentShelfId: string;
   isSubmitting?: boolean;
   error?: string | null;
   onClose: () => void;
-  onSubmit: (anchorShelfId: string | null) => Promise<void> | void;
+  onSubmit: (stackId: string | null) => Promise<void> | void;
 };
 
 export function EditThreadModal({
   visible,
-  shelves,
-  currentAnchorShelfId,
-  currentShelfId,
+  stacks = [],
+  currentStackId,
+  legacyAnchorShelfName,
   isSubmitting = false,
   error,
   onClose,
   onSubmit,
 }: EditThreadModalProps) {
-  const [selectedAnchorShelfId, setSelectedAnchorShelfId] = useState<string | null>(currentAnchorShelfId);
-
-  const selectableShelves = useMemo(
-    () => shelves.filter((shelf) => shelf.id !== currentShelfId),
-    [currentShelfId, shelves],
-  );
+  const [selectedStackId, setSelectedStackId] = useState<string | null>(currentStackId);
 
   useEffect(() => {
     if (visible) {
-      setSelectedAnchorShelfId(currentAnchorShelfId);
+      setSelectedStackId(currentStackId);
     }
-  }, [currentAnchorShelfId, visible]);
+  }, [currentStackId, visible]);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -55,33 +53,45 @@ export function EditThreadModal({
         <Pressable onPress={(event) => event.stopPropagation()}>
           <SurfaceCard style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Edit Thread</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>An Anchor Shelf draws a visible thread on the Board, helping related collections stay memorable.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Stack draws a visible thread on the Board, helping related Shelves stay grouped without becoming a Shelf itself.</Text>
+
+            {legacyAnchorShelfName ? (
+              <View style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md, borderRadius: theme.radii.md, backgroundColor: theme.colors.background }}>
+                <Text style={textStyles.bodySm}>This Shelf currently uses the legacy Shelf anchor “{legacyAnchorShelfName}”. Saving here will replace it with a Stack assignment.</Text>
+              </View>
+            ) : null}
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}>
               <PillButton
-                label="No Thread Yet"
-                variant={selectedAnchorShelfId === null ? 'primary' : 'secondary'}
+                label="No Stack Yet"
+                variant={selectedStackId === null ? 'primary' : 'secondary'}
                 fullWidth
-                onPress={() => setSelectedAnchorShelfId(null)}
+                onPress={() => setSelectedStackId(null)}
                 disabled={isSubmitting}
               />
 
               <View style={{ height: theme.spacing.sm }} />
 
-              {selectableShelves.map((shelf) => (
-                <View key={shelf.id} style={{ marginBottom: theme.spacing.sm }}>
+              {stacks.map((stack) => (
+                <View key={stack.id} style={{ marginBottom: theme.spacing.sm }}>
                   <PillButton
-                    label={shelf.name}
-                    variant={selectedAnchorShelfId === shelf.id ? 'primary' : 'secondary'}
+                    label={stack.name}
+                    variant={selectedStackId === stack.id ? 'primary' : 'secondary'}
                     fullWidth
-                    onPress={() => setSelectedAnchorShelfId(shelf.id)}
+                    onPress={() => setSelectedStackId(stack.id)}
                     disabled={isSubmitting}
                   />
                 </View>
               ))}
+
+              {stacks.length === 0 ? (
+                <View style={{ padding: theme.spacing.md, borderRadius: theme.radii.md, backgroundColor: theme.colors.background }}>
+                  <Text style={textStyles.bodySm}>Create a Stack on the Board first, then assign this Shelf to it.</Text>
+                </View>
+              ) : null}
             </ScrollView>
 
-            <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{selectedAnchorShelfId ? 'This Shelf will appear threaded from the selected Anchor Shelf.' : 'This Shelf will stay independent on the Board.'}</Text>
+            <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{selectedStackId ? 'This Shelf will appear stacked under the selected Stack.' : 'This Shelf will stay independent on the Board.'}</Text>
 
             {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginTop: theme.spacing.sm }]}>{error}</Text> : null}
 
@@ -90,7 +100,7 @@ export function EditThreadModal({
                 label={isSubmitting ? 'Saving Thread...' : 'Save Thread'}
                 icon="link"
                 fullWidth
-                onPress={() => onSubmit(selectedAnchorShelfId)}
+                onPress={() => onSubmit(selectedStackId)}
                 disabled={isSubmitting}
               />
             </View>

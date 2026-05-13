@@ -1,5 +1,6 @@
 import { createSnap, listAllSnaps } from '@/features/snaps/api';
 import { createDefaultShelf, createShelf, getDefaultShelfPlacement, listShelves } from '@/features/shelves/api';
+import { createStack, getDefaultStackPlacement } from '@/features/stacks/api';
 import { createShelfThread } from '@/features/threads/api';
 
 type SeedSampleResult = {
@@ -27,6 +28,7 @@ export async function seedSampleData(userId: string): Promise<SeedSampleResult> 
   const inspirationShelf = shelvesByName.get('inspiration') ?? (await createDefaultShelf(userId));
   const readingShelf = shelvesByName.get('reading list') ?? (await createShelf(userId, { name: 'Reading List', ...getDefaultShelfPlacement(1) }));
   const staysShelf = shelvesByName.get('Weekend Stays'.toLowerCase()) ?? (await createShelf(userId, { name: 'Weekend Stays', ...getDefaultShelfPlacement(2) }));
+  const inspirationStack = await createStack(userId, { name: 'Inspiration Stack', ...getDefaultStackPlacement(0) });
 
   const snaps = [
     {
@@ -83,8 +85,9 @@ export async function seedSampleData(userId: string): Promise<SeedSampleResult> 
     await createSnap(userId, snap);
   }
 
-  await createShelfThread(userId, { fromShelfId: inspirationShelf.id, toShelfId: readingShelf.id });
-  await createShelfThread(userId, { fromShelfId: inspirationShelf.id, toShelfId: staysShelf.id });
+  await createShelfThread(userId, { fromStackId: inspirationStack.id, toShelfId: inspirationShelf.id });
+  await createShelfThread(userId, { fromStackId: inspirationStack.id, toShelfId: readingShelf.id });
+  await createShelfThread(userId, { fromStackId: inspirationStack.id, toShelfId: staysShelf.id });
 
   return {
     created: true,

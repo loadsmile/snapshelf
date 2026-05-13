@@ -7,6 +7,7 @@ import { PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'reac
 import { useAuth } from '@/features/auth/useAuth';
 import { subscribeToAllSnaps } from '@/features/snaps/api';
 import { resolveLocalImageUri } from '@/features/images/resolve';
+import { deleteImageLocally } from '@/features/images/local';
 import { formatCapturedAt, getShelfCoverSnap, getShelfPalette, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
 import { searchSnaps } from '@/features/snaps/search';
 import type { Snap } from '@/features/snaps/types';
@@ -19,10 +20,15 @@ import {
 } from '@/features/shelves/api';
 import { searchShelves } from '@/features/shelves/search';
 import type { Shelf, ShelfBoardVariant } from '@/features/shelves/types';
+import { createStack, getDefaultStackPlacement, saveStackCoverImageLocally, subscribeToStacks, updateStackCover, updateStackPosition } from '@/features/stacks/api';
+import type { Stack } from '@/features/stacks/types';
 import { createShelfThread, subscribeToThreads } from '@/features/threads/api';
 import type { ShelfThread } from '@/features/threads/types';
+import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
 import { AppHeader } from '@/shared/components/AppHeader';
 import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
+import { CreateStackModal } from '@/shared/components/CreateStackModal';
+import { StackCoverModal } from '@/shared/components/StackCoverModal';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
@@ -39,6 +45,10 @@ const MAX_SCALE = 1.9;
 const BOARD_TOP_GUTTER = 28;
 const BOARD_SIDE_GUTTER = 22;
 const BOARD_BOTTOM_GUTTER = 32;
+const STACK_WIDTH = 188;
+const STACK_HEIGHT = 210;
+const STACK_COVER_FRAME_SIZE = 178;
+const STACK_COVER_SIZE = 152;
 
 type Point = {
   x: number;
@@ -120,8 +130,8 @@ function getFitScale(bounds: Bounds, viewport: Point) {
   return clamp(Math.min(availableWidth / contentWidth, availableHeight / contentHeight, 1), ABSOLUTE_MIN_SCALE, 1);
 }
 
-function getContentBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>): Bounds {
-  if (shelves.length === 0) {
+function getContentBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>, stacks: Array<ReturnType<typeof getResolvedStack>>): Bounds {
+  if (shelves.length === 0 && stacks.length === 0) {
     return {
       minX: 0,
       minY: 0,
@@ -130,7 +140,7 @@ function getContentBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>): 
     };
   }
 
-  const bounds = getShelfBounds(shelves);
+  const bounds = getBoardNodeBounds(shelves, stacks);
 
   return {
     minX: clamp(bounds.minX - 36, 0, CANVAS_WIDTH),
@@ -212,6 +222,16 @@ function getResolvedShelf(shelf: Shelf, index: number) {
   };
 }
 
+function getResolvedStack(stack: Stack, index: number) {
+  const fallback = getDefaultStackPlacement(index);
+
+  return {
+    ...stack,
+    boardX: stack.boardX ?? fallback.boardX,
+    boardY: stack.boardY ?? fallback.boardY,
+  };
+}
+
 function getNodeCenter(shelf: ReturnType<typeof getResolvedShelf>) {
   const dimensions = getNodeDimensions(shelf.boardVariant);
 
@@ -242,6 +262,48 @@ function getShelfBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>) {
   );
 
   return bounds;
+}
+
+function getBoardNodeBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>, stacks: Array<ReturnType<typeof getResolvedStack>>) {
+  const shelfBounds = shelves.map((shelf) => {
+    const dimensions = getNodeDimensions(shelf.boardVariant);
+
+    return {
+      minX: shelf.boardX,
+      minY: shelf.boardY,
+      maxX: shelf.boardX + dimensions.width,
+      maxY: shelf.boardY + dimensions.height + 54,
+    };
+  });
+  const stackBounds = stacks.map((stack) => ({
+    minX: stack.boardX,
+    minY: stack.boardY,
+    maxX: stack.boardX + STACK_WIDTH,
+    maxY: stack.boardY + STACK_HEIGHT,
+  }));
+  const bounds = [...shelfBounds, ...stackBounds].reduce(
+    (current, node) => ({
+      minX: Math.min(current.minX, node.minX),
+      minY: Math.min(current.minY, node.minY),
+      maxX: Math.max(current.maxX, node.maxX),
+      maxY: Math.max(current.maxY, node.maxY),
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    },
+  );
+
+  return bounds;
+}
+
+function getStackCenter(stack: ReturnType<typeof getResolvedStack>) {
+  return {
+    x: stack.boardX + STACK_WIDTH / 2,
+    y: stack.boardY + STACK_HEIGHT / 2,
+  };
 }
 
 function renderThread(from: Point, to: Point, key: string) {
@@ -555,12 +617,14 @@ function SummaryPill({ label, value }: { label: string; value: string | number }
 
 function BoardOrientationCard({
   shelfCount,
+  stackCount,
   organizedSnapCount,
   traySnapCount,
   threadCount,
   onDismiss,
 }: {
   shelfCount: number;
+  stackCount: number;
   organizedSnapCount: number;
   traySnapCount: number;
   threadCount: number;
@@ -574,6 +638,7 @@ function BoardOrientationCard({
           <Text style={[textStyles.bodySm, { marginBottom: theme.spacing.sm }]}>Shelves live here. The Tray stays unfiled, and Library finds everything.</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <SummaryPill label="Shelves" value={shelfCount} />
+            <SummaryPill label="Stacks" value={stackCount} />
             <SummaryPill label="Filed" value={organizedSnapCount} />
             <SummaryPill label="Tray" value={traySnapCount} />
             <SummaryPill label="Threads" value={threadCount} />
@@ -667,8 +732,8 @@ function ShelfListItem({
                   backgroundColor: theme.colors.surfaceSoft,
                 }}
               >
-                <Feather name="corner-up-left" size={13} color={theme.colors.primaryDeep} />
-                <Text style={[textStyles.bodySm, { color: theme.colors.accentDeep }]}>Threaded from {anchorShelfName}</Text>
+                <Feather name="layers" size={13} color={theme.colors.primaryDeep} />
+                <Text style={[textStyles.bodySm, { color: theme.colors.accentDeep }]}>Stacked under {anchorShelfName}</Text>
               </View>
             ) : null}
           </View>
@@ -857,6 +922,186 @@ function DraggableShelfNode({
   );
 }
 
+function DraggableStackNode({
+  stack,
+  scale,
+  shelfCount,
+  coverImageUri,
+  onPress,
+  onDrag,
+  onDragEnd,
+}: {
+  stack: ReturnType<typeof getResolvedStack>;
+  scale: number;
+  shelfCount: number;
+  coverImageUri: string | null;
+  onPress: () => void;
+  onDrag: (x: number, y: number) => void;
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  const startRef = useRef({ x: stack.boardX, y: stack.boardY });
+  const movedRef = useRef(false);
+
+  useEffect(() => {
+    startRef.current = { x: stack.boardX, y: stack.boardY };
+  }, [stack.boardX, stack.boardY]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
+        onPanResponderGrant: () => {
+          startRef.current = { x: stack.boardX, y: stack.boardY };
+          movedRef.current = false;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          movedRef.current = true;
+          onDrag(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (!movedRef.current) {
+            onPress();
+            return;
+          }
+
+          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+        },
+        onPanResponderTerminate: (_, gestureState) => {
+          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+        },
+      }),
+    [onDrag, onDragEnd, onPress, scale, stack.boardX, stack.boardY],
+  );
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={{
+        position: 'absolute',
+        left: stack.boardX,
+        top: stack.boardY,
+        width: STACK_WIDTH,
+        alignItems: 'center',
+      }}
+    >
+      <Pressable onPress={onPress} style={{ alignItems: 'center' }} hitSlop={18}>
+        <View
+          style={{
+            width: STACK_COVER_FRAME_SIZE,
+            height: STACK_COVER_FRAME_SIZE,
+            borderRadius: 46,
+            backgroundColor: theme.colors.primary,
+            padding: 12,
+            ...theme.shadows.card,
+          }}
+        >
+          {coverImageUri ? (
+            <SnapArtwork
+              imageUri={coverImageUri}
+              fallbackColors={['#F5D6B7', '#DDE4D5']}
+              style={{
+                width: STACK_COVER_SIZE,
+                height: STACK_COVER_SIZE,
+                borderRadius: 34,
+                padding: theme.spacing.md,
+                justifyContent: 'space-between',
+                overflow: 'hidden',
+              }}
+            >
+              <StackCoverContent shelfCount={shelfCount} hasCover />
+            </SnapArtwork>
+          ) : (
+            <View
+              style={{
+                width: STACK_COVER_SIZE,
+                height: STACK_COVER_SIZE,
+                borderRadius: 34,
+                padding: theme.spacing.md,
+                justifyContent: 'space-between',
+                overflow: 'hidden',
+                backgroundColor: theme.colors.background,
+              }}
+            >
+              <StackCoverContent shelfCount={shelfCount} hasCover={false} />
+            </View>
+          )}
+        </View>
+
+        <View
+          style={{
+            marginTop: -24,
+            borderRadius: theme.radii.pill,
+            backgroundColor: theme.colors.primary,
+            paddingHorizontal: 22,
+            paddingVertical: 12,
+            maxWidth: STACK_WIDTH,
+            ...theme.shadows.button,
+          }}
+        >
+          <Text numberOfLines={1} style={[textStyles.button, { color: theme.colors.surface, textTransform: 'uppercase' }]}>{stack.name}</Text>
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+
+function StackCoverContent({ shelfCount, hasCover }: { shelfCount: number; hasCover: boolean }) {
+  const countLabel = `${shelfCount} Shelf${shelfCount === 1 ? '' : 'ves'}`;
+
+  if (!hasCover) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            borderRadius: theme.radii.pill,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            backgroundColor: theme.colors.surface,
+          }}
+        >
+          <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>{countLabel}</Text>
+        </View>
+        <View
+          style={{
+            width: 58,
+            height: 58,
+            borderRadius: 29,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.colors.surface,
+            borderWidth: 1,
+            borderColor: theme.colors.borderSoft,
+          }}
+        >
+          <Feather name="layers" size={24} color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.spacing.sm }}>
+        <View />
+        <View
+          style={{
+            borderRadius: theme.radii.pill,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            backgroundColor: 'rgba(255,255,255,0.82)',
+          }}
+        >
+          <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>{countLabel}</Text>
+        </View>
+      </View>
+    </>
+  );
+}
+
 export default function BoardScreen() {
   const { isConfigured, user } = useAuth();
   const router = useRouter();
@@ -865,6 +1110,7 @@ export default function BoardScreen() {
   const [allSnaps, setAllSnaps] = useState<Snap[]>([]);
   const [isSnapCapReached, setIsSnapCapReached] = useState(false);
   const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [stacks, setStacks] = useState<Stack[]>([]);
   const [threads, setThreads] = useState<ShelfThread[]>([]);
   const [isLoadingShelves, setIsLoadingShelves] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -877,6 +1123,14 @@ export default function BoardScreen() {
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isOrganizationMapVisible, setIsOrganizationMapVisible] = useState(true);
+  const [isCreateActionVisible, setIsCreateActionVisible] = useState(false);
+  const [isCreateStackVisible, setIsCreateStackVisible] = useState(false);
+  const [isCreatingStack, setIsCreatingStack] = useState(false);
+  const [createStackError, setCreateStackError] = useState<string | null>(null);
+  const [actionStack, setActionStack] = useState<Stack | null>(null);
+  const [coverStack, setCoverStack] = useState<Stack | null>(null);
+  const [isSavingStackCover, setIsSavingStackCover] = useState(false);
+  const [stackCoverError, setStackCoverError] = useState<string | null>(null);
 
   const bootstrappingIds = useRef(new Set<string>());
   const transformRef = useRef(boardTransform);
@@ -973,10 +1227,35 @@ export default function BoardScreen() {
     return unsubscribe;
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!user?.id) {
+      setStacks([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToStacks(
+      user.id,
+      (nextStacks) => {
+        setStacks(nextStacks);
+      },
+      (nextError) => {
+        setError(nextError.message);
+      },
+    );
+
+    return unsubscribe;
+  }, [user?.id]);
+
   const resolvedShelves = useMemo(() => shelves.map((shelf, index) => getResolvedShelf(shelf, index)), [shelves]);
-  const contentBounds = useMemo(() => getContentBounds(resolvedShelves), [resolvedShelves]);
+  const resolvedStacks = useMemo(() => stacks.map((stack, index) => getResolvedStack(stack, index)), [stacks]);
+  const contentBounds = useMemo(() => getContentBounds(resolvedShelves, resolvedStacks), [resolvedShelves, resolvedStacks]);
   const fitScale = useMemo(() => getFitScale(contentBounds, viewport), [contentBounds, viewport]);
   const shelvesById = useMemo(() => new Map(resolvedShelves.map((shelf) => [shelf.id, shelf])), [resolvedShelves]);
+  const stacksById = useMemo(() => new Map(resolvedStacks.map((stack) => [stack.id, stack])), [resolvedStacks]);
+  const stackCoverImageUris = useMemo(
+    () => new Map(resolvedStacks.map((stack) => [stack.id, resolveLocalImageUri(stack.coverLocalPath)] as const)),
+    [resolvedStacks],
+  );
   const shelfCoverSnaps = useMemo(
     () =>
       new Map(
@@ -1026,20 +1305,44 @@ export default function BoardScreen() {
   const organizedSnapCount = useMemo(() => allSnaps.filter((snap) => snap.shelfId !== null).length, [allSnaps]);
   const traySnapCount = useMemo(() => allSnaps.filter((snap) => snap.shelfId === null && !snap.isArchived).length, [allSnaps]);
   const renderableThreads = useMemo(
-    () => threads.filter((thread) => shelvesById.has(thread.fromShelfId) && shelvesById.has(thread.toShelfId)),
-    [shelvesById, threads],
+    () => threads.filter((thread) => (thread.fromType === 'stack' ? stacksById.has(thread.fromId) : shelvesById.has(thread.fromId)) && shelvesById.has(thread.toShelfId)),
+    [shelvesById, stacksById, threads],
   );
   const anchorShelfNamesByShelfId = useMemo(
     () =>
       new Map(
         renderableThreads.flatMap((thread) => {
-          const anchorShelf = shelvesById.get(thread.fromShelfId);
+          const anchorShelf = thread.fromType === 'shelf' ? shelvesById.get(thread.fromId) : null;
 
           return anchorShelf ? [[thread.toShelfId, anchorShelf.name] as const] : [];
         }),
       ),
     [renderableThreads, shelvesById],
   );
+  const stackNamesByShelfId = useMemo(
+    () =>
+      new Map(
+        renderableThreads.flatMap((thread) => {
+          const stack = thread.fromType === 'stack' ? stacksById.get(thread.fromId) : null;
+
+          return stack ? [[thread.toShelfId, stack.name] as const] : [];
+        }),
+      ),
+    [renderableThreads, stacksById],
+  );
+  const shelfCountsByStackId = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    renderableThreads.forEach((thread) => {
+      if (thread.fromType !== 'stack') {
+        return;
+      }
+
+      counts.set(thread.fromId, (counts.get(thread.fromId) ?? 0) + 1);
+    });
+
+    return counts;
+  }, [renderableThreads]);
   const shelfNamesById = useMemo(() => new Map(shelves.map((shelf) => [shelf.id, shelf.name])), [shelves]);
   const trimmedSearchQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
   const matchingShelves = useMemo(() => searchShelves(resolvedShelves, trimmedSearchQuery), [resolvedShelves, trimmedSearchQuery]);
@@ -1115,7 +1418,7 @@ export default function BoardScreen() {
   }
 
   function zoomToFit() {
-    if (viewport.x === 0 || viewport.y === 0 || resolvedShelves.length === 0) {
+    if (viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
       return;
     }
 
@@ -1131,7 +1434,7 @@ export default function BoardScreen() {
   }
 
   useEffect(() => {
-    if (!shouldCenterOnOpen || viewport.x === 0 || viewport.y === 0 || resolvedShelves.length === 0) {
+    if (!shouldCenterOnOpen || viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
       return;
     }
 
@@ -1146,7 +1449,7 @@ export default function BoardScreen() {
     });
 
     setShouldCenterOnOpen(false);
-  }, [contentBounds, fitScale, resolvedShelves.length, shouldCenterOnOpen, viewport]);
+  }, [contentBounds, fitScale, resolvedShelves.length, resolvedStacks.length, shouldCenterOnOpen, viewport]);
 
   const backgroundPanResponder = useMemo(
     () =>
@@ -1259,7 +1562,40 @@ export default function BoardScreen() {
     }
   }
 
-  async function handleCreateShelf(input: { name: string; anchorShelfId: string | null }) {
+  function handleStackDrag(stackId: string, x: number, y: number) {
+    setStacks((current) =>
+      current.map((stack) => {
+        if (stack.id !== stackId) {
+          return stack;
+        }
+
+        return {
+          ...stack,
+          boardX: clamp(x, 0, CANVAS_WIDTH - STACK_WIDTH),
+          boardY: clamp(y, 0, CANVAS_HEIGHT - STACK_HEIGHT),
+        };
+      }),
+    );
+  }
+
+  async function handleStackDragEnd(stackId: string, x: number, y: number) {
+    if (!user?.id) {
+      return;
+    }
+
+    handleStackDrag(stackId, x, y);
+
+    const nextX = clamp(x, 0, CANVAS_WIDTH - STACK_WIDTH);
+    const nextY = clamp(y, 0, CANVAS_HEIGHT - STACK_HEIGHT);
+
+    try {
+      await updateStackPosition(user.id, stackId, nextX, nextY);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to save the Stack position.');
+    }
+  }
+
+  async function handleCreateShelf(input: { name: string; stackId: string | null }) {
     if (!user?.id) {
       return;
     }
@@ -1272,9 +1608,9 @@ export default function BoardScreen() {
         ...getDefaultShelfPlacement(shelves.length),
       });
 
-      if (input.anchorShelfId) {
+      if (input.stackId) {
         await createShelfThread(user.id, {
-          fromShelfId: input.anchorShelfId,
+          fromStackId: input.stackId,
           toShelfId: createdShelf.id,
         });
       }
@@ -1285,6 +1621,69 @@ export default function BoardScreen() {
       setCreateShelfError(nextError instanceof Error ? nextError.message : 'Unable to create a Shelf right now.');
     } finally {
       setIsCreatingShelf(false);
+    }
+  }
+
+  async function handleCreateStack(input: { name: string }) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setIsCreatingStack(true);
+      setCreateStackError(null);
+      await createStack(user.id, {
+        name: input.name,
+        ...getDefaultStackPlacement(stacks.length),
+      });
+      setIsCreateStackVisible(false);
+      setShouldCenterOnOpen(true);
+    } catch (nextError) {
+      setCreateStackError(nextError instanceof Error ? nextError.message : 'Unable to create a Stack right now.');
+    } finally {
+      setIsCreatingStack(false);
+    }
+  }
+
+  async function handleSelectManualStackCover(uri: string) {
+    if (!user?.id || !coverStack) {
+      return;
+    }
+
+    try {
+      setIsSavingStackCover(true);
+      setStackCoverError(null);
+      const coverLocalPath = await saveStackCoverImageLocally(uri);
+      try {
+        await updateStackCover(user.id, coverStack.id, { coverLocalPath });
+      } catch (nextError) {
+        await deleteImageLocally(coverLocalPath);
+        throw nextError;
+      }
+      setStacks((current) => current.map((stack) => (stack.id === coverStack.id ? { ...stack, coverLocalPath } : stack)));
+      setCoverStack(null);
+    } catch (nextError) {
+      setStackCoverError(nextError instanceof Error ? nextError.message : 'Unable to save this Stack cover right now.');
+    } finally {
+      setIsSavingStackCover(false);
+    }
+  }
+
+  async function handleClearStackCover() {
+    if (!user?.id || !coverStack) {
+      return;
+    }
+
+    try {
+      setIsSavingStackCover(true);
+      setStackCoverError(null);
+      await updateStackCover(user.id, coverStack.id, { coverLocalPath: null });
+      setStacks((current) => current.map((stack) => (stack.id === coverStack.id ? { ...stack, coverLocalPath: null } : stack)));
+      setCoverStack(null);
+    } catch (nextError) {
+      setStackCoverError(nextError instanceof Error ? nextError.message : 'Unable to clear this Stack cover right now.');
+    } finally {
+      setIsSavingStackCover(false);
     }
   }
 
@@ -1370,7 +1769,7 @@ export default function BoardScreen() {
         </SurfaceCard>
       ) : null}
 
-      {!trimmedSearchQuery && !isLoadingShelves && shelves.length === 0 ? (
+      {!trimmedSearchQuery && !isLoadingShelves && shelves.length === 0 && stacks.length === 0 ? (
         <View>
           <EmptyState
             title="Your Board is waiting for its first Shelf"
@@ -1432,11 +1831,12 @@ export default function BoardScreen() {
         </View>
       ) : null}
 
-      {!trimmedSearchQuery && resolvedShelves.length > 0 ? (
+      {!trimmedSearchQuery && (resolvedShelves.length > 0 || resolvedStacks.length > 0) ? (
         <View style={{ flex: 1 }}>
           {isOrganizationMapVisible ? (
             <BoardOrientationCard
               shelfCount={resolvedShelves.length}
+              stackCount={resolvedStacks.length}
               organizedSnapCount={organizedSnapCount}
               traySnapCount={traySnapCount}
               threadCount={renderableThreads.length}
@@ -1532,15 +1932,33 @@ export default function BoardScreen() {
                     <DottedCanvas />
 
                     {renderableThreads.map((thread) => {
-                      const fromShelf = shelvesById.get(thread.fromShelfId);
+                      const fromShelf = thread.fromType === 'shelf' ? shelvesById.get(thread.fromId) : null;
+                      const fromStack = thread.fromType === 'stack' ? stacksById.get(thread.fromId) : null;
                       const toShelf = shelvesById.get(thread.toShelfId);
 
-                      if (!fromShelf || !toShelf) {
+                      if ((!fromShelf && !fromStack) || !toShelf) {
                         return null;
                       }
 
-                      return renderThread(getNodeCenter(fromShelf), getNodeCenter(toShelf), `thread-${thread.id}`);
+                      return renderThread(fromStack ? getStackCenter(fromStack) : getNodeCenter(fromShelf!), getNodeCenter(toShelf), `thread-${thread.id}`);
                     })}
+
+                    {resolvedStacks.map((stack) => (
+                      <DraggableStackNode
+                        key={stack.id}
+                        stack={stack}
+                        scale={boardTransform.scale}
+                        shelfCount={shelfCountsByStackId.get(stack.id) ?? 0}
+                        coverImageUri={stackCoverImageUris.get(stack.id) ?? null}
+                        onPress={() => setActionStack(stack)}
+                        onDrag={(x, y) => {
+                          handleStackDrag(stack.id, x, y);
+                        }}
+                        onDragEnd={(x, y) => {
+                          handleStackDragEnd(stack.id, x, y);
+                        }}
+                      />
+                    ))}
 
                     {resolvedShelves.map((shelf) => (
                       <DraggableShelfNode
@@ -1615,7 +2033,7 @@ export default function BoardScreen() {
                     coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                     snapCount={snapCountsByShelfId.get(shelf.id) ?? 0}
                     latestSnap={latestSnapsByShelfId.get(shelf.id) ?? null}
-                    anchorShelfName={anchorShelfNamesByShelfId.get(shelf.id) ?? null}
+                    anchorShelfName={stackNamesByShelfId.get(shelf.id) ?? anchorShelfNamesByShelfId.get(shelf.id) ?? null}
                     onPress={() => router.push(`/shelf/${shelf.id}`)}
                   />
                 </View>
@@ -1624,7 +2042,7 @@ export default function BoardScreen() {
           )}
 
           <Pressable
-            onPress={() => setIsCreateShelfVisible(true)}
+            onPress={() => setIsCreateActionVisible(true)}
             style={{
               position: 'absolute',
               right: 0,
@@ -1646,6 +2064,7 @@ export default function BoardScreen() {
       <CreateShelfModal
         visible={isCreateShelfVisible}
         shelves={resolvedShelves}
+        stacks={resolvedStacks}
         isSubmitting={isCreatingShelf}
         error={createShelfError}
         onClose={() => {
@@ -1653,6 +2072,72 @@ export default function BoardScreen() {
           setCreateShelfError(null);
         }}
         onSubmit={handleCreateShelf}
+      />
+      <CreateStackModal
+        visible={isCreateStackVisible}
+        isSubmitting={isCreatingStack}
+        error={createStackError}
+        onClose={() => {
+          setIsCreateStackVisible(false);
+          setCreateStackError(null);
+        }}
+        onSubmit={handleCreateStack}
+      />
+      <ActionSheetModal
+        visible={isCreateActionVisible}
+        title="Add to Board"
+        description="Create a Shelf for Snaps or a Stack to visually group related Shelves."
+        actions={[
+          {
+            label: 'New Shelf',
+            icon: 'archive',
+            onPress: () => {
+              setIsCreateActionVisible(false);
+              setIsCreateShelfVisible(true);
+            },
+          },
+          {
+            label: 'New Stack',
+            icon: 'layers',
+            onPress: () => {
+              setIsCreateActionVisible(false);
+              setIsCreateStackVisible(true);
+            },
+          },
+        ]}
+        onClose={() => setIsCreateActionVisible(false)}
+      />
+      <ActionSheetModal
+        visible={actionStack !== null}
+        title="Stack Actions"
+        description={actionStack ? `Update the visual cover for "${actionStack.name}".` : undefined}
+        actions={[
+          {
+            label: 'Change Cover',
+            icon: 'image',
+            onPress: () => {
+              setCoverStack(actionStack);
+              setActionStack(null);
+            },
+          },
+        ]}
+        onClose={() => setActionStack(null)}
+      />
+      <StackCoverModal
+        visible={coverStack !== null}
+        stack={coverStack}
+        isSubmitting={isSavingStackCover}
+        error={stackCoverError}
+        onClose={() => {
+          setCoverStack(null);
+          setStackCoverError(null);
+        }}
+        onSelectManualImage={(uri) => {
+          void handleSelectManualStackCover(uri);
+        }}
+        onClearCover={() => {
+          void handleClearStackCover();
+        }}
       />
     </Screen>
   );
