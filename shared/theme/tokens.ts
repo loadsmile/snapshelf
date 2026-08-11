@@ -34,7 +34,7 @@ export const darkColors: typeof lightColors = {
 
 export const brandColor = lightColors.primary;
 
-let activeThemeMode: ThemeMode = 'dark';
+let activeThemeMode: ThemeMode = 'light';
 
 export function getThemeMode() {
   return activeThemeMode;

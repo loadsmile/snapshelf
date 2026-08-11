@@ -9,6 +9,7 @@ function buildSnap(id: string): Snap {
     shelfId: null,
     title: id,
     imageUrl: null,
+    sourceUrl: null,
     localPath: null,
     thought: null,
     labels: [],

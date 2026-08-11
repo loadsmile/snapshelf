@@ -1,15 +1,23 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
 import { deleteImageLocally } from '@/features/images/local';
 import { resolveLocalImageUri } from '@/features/images/resolve';
 import { formatCapturedAt, getShelfCoverSnap, getShelfPalette, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
-import { deleteSnap, moveSnapToShelf, setSnapArchived, setSnapFavorite, updateSnapDetails } from '@/features/snaps/api';
+import {
+  deleteSnap,
+  moveSnapToShelf,
+  removeSnapLocalImageReference,
+  replaceSnapLocalImage,
+  setSnapArchived,
+  setSnapFavorite,
+  updateSnapDetails,
+} from '@/features/snaps/api';
 import type { Snap, UpdateSnapInput } from '@/features/snaps/types';
-import { deleteShelf, getShelf, saveShelfCoverImageLocally, subscribeToShelves, updateShelfCover } from '@/features/shelves/api';
+import { deleteShelf, getShelf, renameShelf, saveShelfCoverImageLocally, subscribeToShelves, updateShelfCover } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { subscribeToStacks } from '@/features/stacks/api';
 import type { Stack } from '@/features/stacks/types';
@@ -20,6 +28,8 @@ import { CreateSnapModal } from '@/shared/components/CreateSnapModal';
 import { EditThreadModal } from '@/shared/components/EditThreadModal';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PillButton } from '@/shared/components/PillButton';
+import { PostSaveConfirmationModal } from '@/shared/components/PostSaveConfirmationModal';
+import { RenameOrganizationModal } from '@/shared/components/RenameOrganizationModal';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
@@ -135,8 +145,15 @@ export default function ShelfViewScreen() {
   const [savingSnapId, setSavingSnapId] = useState<string | null>(null);
   const [favoriteSnapId, setFavoriteSnapId] = useState<string | null>(null);
   const [archivingSnapId, setArchivingSnapId] = useState<string | null>(null);
+  const [imageSnapId, setImageSnapId] = useState<string | null>(null);
   const [isDeletingShelf, setIsDeletingShelf] = useState(false);
+  const [isRenameShelfVisible, setIsRenameShelfVisible] = useState(false);
+  const [isRenamingShelf, setIsRenamingShelf] = useState(false);
+  const [renameShelfError, setRenameShelfError] = useState<string | null>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
+  const [createdSnap, setCreatedSnap] = useState<Snap | null>(null);
+  const [isUndoingCreatedSnap, setIsUndoingCreatedSnap] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const { error: snapsError, hasMore, loadMore, loading: isLoadingSnaps, loadingMore, snaps } = usePaginatedSnaps(user?.id, id ?? null);
 
   useEffect(() => {
@@ -259,6 +276,12 @@ export default function ShelfViewScreen() {
   const shelfHighlights = useMemo(() => getShelfHighlights(snaps), [snaps]);
   const activeError = error ?? snapsError;
 
+  const handleEndReached = useCallback(() => {
+    if (!isLoadingSnaps && !loadingMore && hasMore) {
+      void loadMore();
+    }
+  }, [hasMore, isLoadingSnaps, loadMore, loadingMore]);
+
   async function handleSaveThread(stackId: string | null) {
     if (!user?.id || !id) {
       return;
@@ -355,6 +378,42 @@ export default function ShelfViewScreen() {
     }
   }
 
+  async function handleReplaceSnapImage(snap: Snap, sourceUri: string) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setImageSnapId(snap.id);
+      setError(null);
+      const updatedSnap = await replaceSnapLocalImage(user.id, snap, sourceUri);
+      setDetailSnap(updatedSnap);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to replace this image right now.');
+      throw nextError;
+    } finally {
+      setImageSnapId(null);
+    }
+  }
+
+  async function handleRemoveSnapImageReference(snap: Snap) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setImageSnapId(snap.id);
+      setError(null);
+      const updatedSnap = await removeSnapLocalImageReference(user.id, snap);
+      setDetailSnap(updatedSnap);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to remove this image reference right now.');
+      throw nextError;
+    } finally {
+      setImageSnapId(null);
+    }
+  }
+
   async function handleMoveSnapToTray(snap: Snap) {
     if (!user?.id) {
       return;
@@ -445,6 +504,23 @@ export default function ShelfViewScreen() {
     }, 0);
   }
 
+  async function handleUndoCreatedSnap() {
+    if (!createdSnap || !user?.id) {
+      return;
+    }
+
+    try {
+      setIsUndoingCreatedSnap(true);
+      setConfirmationError(null);
+      await deleteSnap(user.id, createdSnap.id, createdSnap.localPath, createdSnap.shelfId);
+      setCreatedSnap(null);
+    } catch (nextError) {
+      setConfirmationError(nextError instanceof Error ? nextError.message : 'Unable to undo this save right now.');
+    } finally {
+      setIsUndoingCreatedSnap(false);
+    }
+  }
+
   async function handleDeleteShelf() {
     if (!user?.id || !id) {
       return;
@@ -458,6 +534,24 @@ export default function ShelfViewScreen() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to delete this Shelf right now.');
       setIsDeletingShelf(false);
+    }
+  }
+
+  async function handleRenameShelf(name: string) {
+    if (!user?.id || !id) {
+      return;
+    }
+
+    try {
+      setIsRenamingShelf(true);
+      setRenameShelfError(null);
+      await renameShelf(user.id, id, name);
+      setShelf((current) => (current ? { ...current, name } : current));
+      setIsRenameShelfVisible(false);
+    } catch (nextError) {
+      setRenameShelfError(nextError instanceof Error ? nextError.message : 'Unable to rename this Shelf right now.');
+    } finally {
+      setIsRenamingShelf(false);
     }
   }
 
@@ -483,180 +577,174 @@ export default function ShelfViewScreen() {
   }
 
   return (
-    <Screen
-      scrollable
-      contentContainerStyle={{ paddingBottom: 90 }}
-      scrollViewProps={{
-        onScroll: (event) => {
-          const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-          const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    <Screen>
+      <FlatList
+        data={snaps}
+        keyExtractor={(snap) => snap.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 90 }}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.35}
+        ListHeaderComponent={(
+          <>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: theme.spacing.xl,
+              }}
+            >
+              <Pressable onPress={() => router.back()} style={{ padding: 4 }}>
+                <Feather name="arrow-left" size={24} color={theme.colors.primary} />
+              </Pressable>
+              <Text style={textStyles.brand}>SnapShelf</Text>
+              {isDeletingShelf ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Pressable onPress={() => setIsShelfMenuVisible(true)} disabled={!shelf} hitSlop={10} style={{ padding: 4 }}>
+                  <Feather name="more-vertical" size={20} color={shelf ? theme.colors.textMuted : theme.colors.borderSoft} />
+                </Pressable>
+              )}
+            </View>
 
-          if (distanceFromBottom <= 300) {
-            void loadMore();
-          }
-        },
-        scrollEventThrottle: 16,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: theme.spacing.xl,
-        }}
-      >
-        <Pressable onPress={() => router.back()} style={{ padding: 4 }}>
-          <Feather name="arrow-left" size={24} color={theme.colors.primary} />
-        </Pressable>
-        <Text style={textStyles.brand}>SnapShelf</Text>
-        {isDeletingShelf ? (
-          <ActivityIndicator size="small" color={theme.colors.primary} />
-        ) : (
-          <Pressable onPress={() => setIsShelfMenuVisible(true)} disabled={!shelf} hitSlop={10} style={{ padding: 4 }}>
-            <Feather name="more-vertical" size={20} color={shelf ? theme.colors.textMuted : theme.colors.borderSoft} />
-          </Pressable>
+            <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+              <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelf Summary</Text>
+              <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
+              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Shelf is a curated collection. Revisit it to refine the Snaps, labels, and thread that make this idea easy to find later.</Text>
+              <SnapArtwork
+                snap={coverSnap}
+                imageUri={coverImageUri}
+                fallbackColors={shelf ? getShelfPalette(shelf.name) : ['#EFE9DD', '#DDE4D5']}
+                showChildrenOnFallback
+                style={{
+                  height: 170,
+                  borderRadius: theme.radii.lg,
+                  marginBottom: theme.spacing.lg,
+                  padding: theme.spacing.lg,
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <View
+                  style={{
+                    alignSelf: 'flex-start',
+                    borderRadius: theme.radii.pill,
+                    backgroundColor: theme.colors.surfaceSoft,
+                    borderWidth: 1,
+                    borderColor: theme.colors.borderSoft,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{coverImageUri ? 'Manual cover' : coverSnap ? 'Snap cover' : 'No cover set'}</Text>
+                </View>
+              </SnapArtwork>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
+                <ShelfSummaryMetric label="Snaps" value={isLoadingSnaps ? '...' : snaps.length} />
+                <ShelfSummaryMetric label="Favorites" value={favoriteCount} />
+                <ShelfSummaryMetric label="Latest" value={latestSnap ? formatCapturedAt(latestSnap.capturedAt ?? latestSnap.createdAt).replace('Captured ', '') : 'Empty'} />
+              </View>
+              {shelfHighlights.length > 0 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
+                  {shelfHighlights.map((highlight) => (
+                    <SectionLabel key={highlight} label={highlight} />
+                  ))}
+                </View>
+              ) : null}
+              <View style={{ gap: theme.spacing.sm }}>
+                <PillButton label="Change Cover" icon="image" variant="secondary" onPress={() => setIsShelfCoverVisible(true)} fullWidth disabled={isDeletingShelf || !shelf} />
+                <PillButton label="+ Snap It" icon="plus" onPress={() => setIsCreateSnapVisible(true)} fullWidth disabled={isDeletingShelf} />
+              </View>
+            </SurfaceCard>
+
+            <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+              <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stack</Text>
+              <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{stack ? `Stacked under ${stack.name}` : anchorShelf ? `Legacy thread from ${anchorShelf.name}` : 'Independent Shelf'}</Text>
+              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{stack ? 'This Shelf is grouped under a visual Stack on the Board.' : 'Leave this Shelf independent, or choose a Stack to group it visually on the Board.'}</Text>
+              <PillButton label="Edit Stack" icon="layers" onPress={() => setIsEditThreadVisible(true)} fullWidth disabled={isDeletingShelf} />
+            </SurfaceCard>
+
+            {activeError ? (
+              <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+                <Text style={textStyles.bodyMd}>{activeError}</Text>
+              </SurfaceCard>
+            ) : null}
+
+            {isLoadingShelf || isLoadingSnaps ? (
+              <SurfaceCard style={{ padding: theme.spacing.lg, marginBottom: theme.spacing.lg }}>
+                <Text style={textStyles.bodyMd}>Loading this Shelf...</Text>
+              </SurfaceCard>
+            ) : null}
+
+            {!isLoadingSnaps && snaps.length === 0 ? (
+              <>
+                <EmptyState
+                  title="This Shelf is ready to curate"
+                  description="Empty Shelves are useful containers. File Snaps here from The Tray, move existing finds from Library, or add a fresh Snap directly."
+                />
+                <SurfaceCard style={{ marginTop: theme.spacing.lg, marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+                  <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Where to add from</Text>
+                  <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>Use The Tray for unorganized new Snaps. Use Library when you remember what you saved but not where it belongs.</Text>
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <PillButton label="Open The Tray" icon="inbox" variant="secondary" fullWidth onPress={() => router.push('/tray')} disabled={isDeletingShelf} />
+                    <PillButton label="Search Library" icon="book-open" variant="secondary" fullWidth onPress={() => router.push('/library')} disabled={isDeletingShelf} />
+                  </View>
+                </SurfaceCard>
+              </>
+            ) : null}
+          </>
         )}
-      </View>
-
-      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelf Summary</Text>
-        <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Shelf is a curated collection. Revisit it to refine the Snaps, labels, and thread that make this idea easy to find later.</Text>
-        <SnapArtwork
-          snap={coverSnap}
-          imageUri={coverImageUri}
-          fallbackColors={shelf ? getShelfPalette(shelf.name) : ['#EFE9DD', '#DDE4D5']}
-          showChildrenOnFallback
-          style={{
-            height: 170,
-            borderRadius: theme.radii.lg,
-            marginBottom: theme.spacing.lg,
-            padding: theme.spacing.lg,
-            justifyContent: 'flex-end',
-          }}
-        >
-          <View
-            style={{
-              alignSelf: 'flex-start',
-              borderRadius: theme.radii.pill,
-              backgroundColor: theme.colors.surfaceSoft,
-              borderWidth: 1,
-              borderColor: theme.colors.borderSoft,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-            }}
-          >
-            <Text style={[textStyles.bodySm, { color: theme.colors.text }]}>{coverImageUri ? 'Manual cover' : coverSnap ? 'Snap cover' : 'No cover set'}</Text>
-          </View>
-        </SnapArtwork>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
-          <ShelfSummaryMetric label="Snaps" value={isLoadingSnaps ? '...' : snaps.length} />
-          <ShelfSummaryMetric label="Favorites" value={favoriteCount} />
-          <ShelfSummaryMetric label="Latest" value={latestSnap ? formatCapturedAt(latestSnap.capturedAt ?? latestSnap.createdAt).replace('Captured ', '') : 'Empty'} />
-        </View>
-        {shelfHighlights.length > 0 ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.lg }}>
-            {shelfHighlights.map((highlight) => (
-              <SectionLabel key={highlight} label={highlight} />
-            ))}
+        ListFooterComponent={loadingMore ? (
+          <View style={{ alignItems: 'center', paddingVertical: theme.spacing.md }}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
           </View>
         ) : null}
-        <View style={{ gap: theme.spacing.sm }}>
-          <PillButton label="Change Cover" icon="image" variant="secondary" onPress={() => setIsShelfCoverVisible(true)} fullWidth disabled={isDeletingShelf || !shelf} />
-          <PillButton label="+ Snap It" icon="plus" onPress={() => setIsCreateSnapVisible(true)} fullWidth disabled={isDeletingShelf} />
-        </View>
-      </SurfaceCard>
-
-      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stack</Text>
-        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{stack ? `Stacked under ${stack.name}` : anchorShelf ? `Legacy thread from ${anchorShelf.name}` : 'Independent Shelf'}</Text>
-        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{stack ? 'This Shelf is grouped under a visual Stack on the Board.' : 'Leave this Shelf independent, or choose a Stack to group it visually on the Board.'}</Text>
-        <PillButton label="Edit Stack" icon="layers" onPress={() => setIsEditThreadVisible(true)} fullWidth disabled={isDeletingShelf} />
-      </SurfaceCard>
-
-      {activeError ? (
-        <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-          <Text style={textStyles.bodyMd}>{activeError}</Text>
-        </SurfaceCard>
-      ) : null}
-
-      {isLoadingShelf || isLoadingSnaps ? (
-        <SurfaceCard style={{ padding: theme.spacing.lg }}>
-          <Text style={textStyles.bodyMd}>Loading this Shelf...</Text>
-        </SurfaceCard>
-      ) : null}
-
-      {!isLoadingSnaps && snaps.length === 0 ? (
-        <>
-          <EmptyState
-            title="This Shelf is ready to curate"
-            description="Empty Shelves are useful containers. File Snaps here from The Tray, move existing finds from Library, or add a fresh Snap directly."
-          />
-          <SurfaceCard style={{ marginTop: theme.spacing.lg, marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Where to add from</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>Use The Tray for unorganized new Snaps. Use Library when you remember what you saved but not where it belongs.</Text>
-            <View style={{ gap: theme.spacing.sm }}>
-              <PillButton label="Open The Tray" icon="inbox" variant="secondary" fullWidth onPress={() => router.push('/tray')} disabled={isDeletingShelf} />
-              <PillButton label="Search Library" icon="book-open" variant="secondary" fullWidth onPress={() => router.push('/library')} disabled={isDeletingShelf} />
-            </View>
-          </SurfaceCard>
-        </>
-      ) : null}
-
-      <View style={{ gap: theme.spacing.lg }}>
-        {snaps.map((snap) => {
+        renderItem={({ item: snap }) => {
           const colors = getSnapPalette(snap);
           const isDeletingSnap = deletingSnapId === snap.id;
           const isMovingSnap = movingSnapId === snap.id;
 
           return (
-            <Pressable key={snap.id} onPress={() => setDetailSnap(snap)}>
+            <Pressable onPress={() => setDetailSnap(snap)} style={{ marginBottom: theme.spacing.lg }}>
               <SurfaceCard style={{ padding: theme.spacing.md }}>
-              <SnapPreview colors={colors} snap={snap} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.sm }}>
-                <SectionLabel label={getSnapSourceLabel(snap.source)} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-                  <Text style={textStyles.bodySm}>{formatCapturedAt(snap.capturedAt ?? snap.createdAt)}</Text>
-                  {isDeletingSnap || isMovingSnap ? (
-                    <ActivityIndicator size="small" color={theme.colors.primary} />
-                  ) : (
-                    <Pressable
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        setActionSnap(snap);
-                      }}
-                      disabled={isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || savingSnapId !== null || favoriteSnapId !== null || archivingSnapId !== null}
-                      hitSlop={10}
-                    >
-                      <Feather name="more-vertical" size={18} color={theme.colors.textMuted} />
-                    </Pressable>
-                  )}
+                <SnapPreview colors={colors} snap={snap} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.sm }}>
+                  <SectionLabel label={getSnapSourceLabel(snap.source)} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+                    <Text style={textStyles.bodySm}>{formatCapturedAt(snap.capturedAt ?? snap.createdAt)}</Text>
+                    {isDeletingSnap || isMovingSnap ? (
+                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                    ) : (
+                      <Pressable
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          setActionSnap(snap);
+                        }}
+                        disabled={isDeletingShelf || deletingSnapId !== null || movingSnapId !== null || savingSnapId !== null || favoriteSnapId !== null || archivingSnapId !== null}
+                        hitSlop={10}
+                      >
+                        <Feather name="more-vertical" size={18} color={theme.colors.textMuted} />
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
-              </View>
 
-              <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{getSnapHeadline(snap)}</Text>
+                <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.xs }]}>{getSnapHeadline(snap)}</Text>
 
-              {snap.thought ? <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>{snap.thought}</Text> : null}
+                {snap.thought ? <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>{snap.thought}</Text> : null}
 
-              {snap.labels.length > 0 ? (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
-                  {snap.labels.map((label) => (
-                    <SectionLabel key={label} label={label} />
-                  ))}
-                </View>
-              ) : null}
+                {snap.labels.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
+                    {snap.labels.map((label) => (
+                      <SectionLabel key={label} label={label} />
+                    ))}
+                  </View>
+                ) : null}
               </SurfaceCard>
             </Pressable>
           );
-        })}
-      </View>
-
-      {loadingMore ? (
-        <View style={{ alignItems: 'center', paddingVertical: theme.spacing.md }}>
-          <ActivityIndicator size="small" color={theme.colors.primary} />
-        </View>
-      ) : null}
+        }}
+      />
 
       <CreateSnapModal
         visible={isCreateSnapVisible}
@@ -668,6 +756,28 @@ export default function ShelfViewScreen() {
         submitLabel="Save to Shelf"
         source="manual"
         onClose={() => setIsCreateSnapVisible(false)}
+        onCreated={(snap) => {
+          setConfirmationError(null);
+          setCreatedSnap(snap);
+        }}
+      />
+
+      <PostSaveConfirmationModal
+        snap={createdSnap}
+        destinationLabel={shelf?.name ?? 'this Shelf'}
+        canFileNow={false}
+        isBusy={isUndoingCreatedSnap}
+        error={confirmationError}
+        onView={() => {
+          if (createdSnap) {
+            const snapId = createdSnap.id;
+            setCreatedSnap(null);
+            router.push(`/snap/${snapId}`);
+          }
+        }}
+        onFileNow={() => undefined}
+        onUndo={() => void handleUndoCreatedSnap()}
+        onDismiss={() => setCreatedSnap(null)}
       />
 
       <ActionSheetModal
@@ -735,6 +845,15 @@ export default function ShelfViewScreen() {
           shelf
             ? [
                 {
+                  label: 'Rename Shelf',
+                  icon: 'edit-3',
+                  disabled: isDeletingShelf,
+                  onPress: () => {
+                    setIsShelfMenuVisible(false);
+                    setIsRenameShelfVisible(true);
+                  },
+                },
+                {
                   label: 'Change Cover',
                   icon: 'image',
                   disabled: isDeletingShelf || isSavingShelfCover,
@@ -766,6 +885,19 @@ export default function ShelfViewScreen() {
         onClose={() => setIsShelfMenuVisible(false)}
       />
 
+      <RenameOrganizationModal
+        visible={isRenameShelfVisible}
+        type="Shelf"
+        currentName={shelf?.name ?? ''}
+        isSubmitting={isRenamingShelf}
+        error={renameShelfError}
+        onClose={() => {
+          setIsRenameShelfVisible(false);
+          setRenameShelfError(null);
+        }}
+        onSubmit={handleRenameShelf}
+      />
+
       <SnapDetailModal
         visible={detailSnap !== null}
         snap={detailSnap}
@@ -774,11 +906,14 @@ export default function ShelfViewScreen() {
         isFavoriteLoading={favoriteSnapId === detailSnap?.id}
         isArchiveLoading={archivingSnapId === detailSnap?.id}
         isDeleteLoading={deletingSnapId === detailSnap?.id}
+        isImageLoading={imageSnapId === detailSnap?.id}
         error={activeError}
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
         onToggleFavorite={handleToggleFavorite}
         onToggleArchived={handleToggleArchived}
+        onReplaceImage={handleReplaceSnapImage}
+        onRemoveImageReference={handleRemoveSnapImageReference}
         onDelete={handleConfirmDeleteSnap}
       />
 

@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
+import { getCaptureFirstOnboardingStorageKey, shouldShowCaptureFirstOnboarding } from '@/features/onboarding/capture-first';
 import { subscribeToAllSnaps } from '@/features/snaps/api';
 import { resolveLocalImageUri } from '@/features/images/resolve';
 import { deleteImageLocally } from '@/features/images/local';
@@ -20,17 +21,21 @@ import {
 } from '@/features/shelves/api';
 import { searchShelves } from '@/features/shelves/search';
 import type { Shelf, ShelfBoardVariant } from '@/features/shelves/types';
-import { createStack, getDefaultStackPlacement, saveStackCoverImageLocally, subscribeToStacks, updateStackCover, updateStackPosition } from '@/features/stacks/api';
+import { createStack, deleteStack, getDefaultStackPlacement, renameStack, saveStackCoverImageLocally, subscribeToStacks, updateStackCover, updateStackPosition } from '@/features/stacks/api';
+import { searchStacks } from '@/features/stacks/search';
 import type { Stack } from '@/features/stacks/types';
 import { createShelfThread, subscribeToThreads } from '@/features/threads/api';
 import type { ShelfThread } from '@/features/threads/types';
 import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
 import { AppHeader } from '@/shared/components/AppHeader';
+import { CaptureFirstOnboardingModal } from '@/shared/components/CaptureFirstOnboardingModal';
+import { CreateSnapModal } from '@/shared/components/CreateSnapModal';
 import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
 import { CreateStackModal } from '@/shared/components/CreateStackModal';
 import { StackCoverModal } from '@/shared/components/StackCoverModal';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PillButton } from '@/shared/components/PillButton';
+import { RenameOrganizationModal } from '@/shared/components/RenameOrganizationModal';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
@@ -244,6 +249,17 @@ function getNodeCenter(shelf: ReturnType<typeof getResolvedShelf>) {
 
 function getShelfFocusTransform(shelf: ReturnType<typeof getResolvedShelf>, viewport: Point, fitScale: number): BoardTransform {
   const center = getNodeCenter(shelf);
+  const targetScale = clamp(Math.max(fitScale, SEARCH_FOCUS_SCALE), fitScale, MAX_SCALE);
+
+  return {
+    scale: targetScale,
+    x: viewport.x / 2 - center.x * targetScale,
+    y: viewport.y / 2 - center.y * targetScale,
+  };
+}
+
+function getStackFocusTransform(stack: ReturnType<typeof getResolvedStack>, viewport: Point, fitScale: number): BoardTransform {
+  const center = getStackCenter(stack);
   const targetScale = clamp(Math.max(fitScale, SEARCH_FOCUS_SCALE), fitScale, MAX_SCALE);
 
   return {
@@ -758,6 +774,62 @@ function ShelfListItem({
   );
 }
 
+function StackListItem({
+  stack,
+  coverImageUri,
+  shelfCount,
+  onPress,
+}: {
+  stack: ReturnType<typeof getResolvedStack>;
+  coverImageUri: string | null;
+  shelfCount: number;
+  onPress: () => void;
+}) {
+  const countCopy = `${shelfCount} ${shelfCount === 1 ? 'Shelf' : 'Shelves'}`;
+
+  return (
+    <Pressable onPress={onPress}>
+      <SurfaceCard style={{ padding: theme.spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <SnapArtwork
+            imageUri={coverImageUri}
+            fallbackColors={['#F5D6B7', '#DDE4D5']}
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 24,
+              padding: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 21,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(255,255,255,0.76)',
+              }}
+            >
+              <Feather name="layers" size={20} color={theme.colors.primary} />
+            </View>
+          </SnapArtwork>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: 4 }]}>Stack</Text>
+            <Text style={[textStyles.titleLg, { marginBottom: 4 }]} numberOfLines={1}>{stack.name}</Text>
+            <Text style={textStyles.bodySm}>{countCopy}</Text>
+          </View>
+
+          <Feather name="more-vertical" size={18} color={theme.colors.primary} />
+        </View>
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
 function SnapSearchResult({
   snap,
   shelfName,
@@ -956,6 +1028,7 @@ function DraggableShelfNode({
 function DraggableStackNode({
   stack,
   scale,
+  isHighlighted,
   shelfCount,
   coverImageUri,
   onPress,
@@ -964,6 +1037,7 @@ function DraggableStackNode({
 }: {
   stack: ReturnType<typeof getResolvedStack>;
   scale: number;
+  isHighlighted?: boolean;
   shelfCount: number;
   coverImageUri: string | null;
   onPress: () => void;
@@ -1016,6 +1090,22 @@ function DraggableStackNode({
         alignItems: 'center',
       }}
     >
+      {isHighlighted ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: -14,
+            top: -14,
+            width: STACK_WIDTH + 28,
+            height: STACK_HEIGHT + 28,
+            borderRadius: 58,
+            borderWidth: 2,
+            borderColor: theme.colors.primary,
+            backgroundColor: 'rgba(198, 58, 6, 0.08)',
+          }}
+        />
+      ) : null}
       <Pressable onPress={onPress} style={{ alignItems: 'center' }} hitSlop={18}>
         <View
           style={{
@@ -1139,6 +1229,7 @@ export default function BoardScreen() {
   const [viewMode, setViewMode] = useState<BoardViewMode>('grid');
   const [hasLoadedViewModePreference, setHasLoadedViewModePreference] = useState(false);
   const [allSnaps, setAllSnaps] = useState<Snap[]>([]);
+  const [hasLoadedSnaps, setHasLoadedSnaps] = useState(false);
   const [isSnapCapReached, setIsSnapCapReached] = useState(false);
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [stacks, setStacks] = useState<Stack[]>([]);
@@ -1154,11 +1245,18 @@ export default function BoardScreen() {
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isOrganizationMapVisible, setIsOrganizationMapVisible] = useState(true);
+  const [hasLoadedOnboardingPreference, setHasLoadedOnboardingPreference] = useState(false);
+  const [hasCompletedCaptureOnboarding, setHasCompletedCaptureOnboarding] = useState(false);
+  const [isFirstCaptureVisible, setIsFirstCaptureVisible] = useState(false);
   const [isCreateActionVisible, setIsCreateActionVisible] = useState(false);
   const [isCreateStackVisible, setIsCreateStackVisible] = useState(false);
   const [isCreatingStack, setIsCreatingStack] = useState(false);
   const [createStackError, setCreateStackError] = useState<string | null>(null);
   const [actionStack, setActionStack] = useState<Stack | null>(null);
+  const [renameStackTarget, setRenameStackTarget] = useState<Stack | null>(null);
+  const [isRenamingStack, setIsRenamingStack] = useState(false);
+  const [renameStackError, setRenameStackError] = useState<string | null>(null);
+  const [deletingStackId, setDeletingStackId] = useState<string | null>(null);
   const [coverStack, setCoverStack] = useState<Stack | null>(null);
   const [isSavingStackCover, setIsSavingStackCover] = useState(false);
   const [stackCoverError, setStackCoverError] = useState<string | null>(null);
@@ -1234,6 +1332,46 @@ export default function BoardScreen() {
       // Preference persistence should not interrupt the board experience.
     });
   }, [hasLoadedViewModePreference, user?.id, viewMode]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadOnboardingPreference() {
+      if (!isConfigured || !user?.id) {
+        if (isActive) {
+          setHasCompletedCaptureOnboarding(false);
+          setHasLoadedOnboardingPreference(true);
+        }
+        return;
+      }
+
+      setHasLoadedOnboardingPreference(false);
+
+      try {
+        const storedDismissal = await AsyncStorage.getItem(getCaptureFirstOnboardingStorageKey(user.id));
+
+        if (!isActive) {
+          return;
+        }
+
+        setHasCompletedCaptureOnboarding(storedDismissal === 'true');
+      } catch {
+        if (isActive) {
+          setHasCompletedCaptureOnboarding(false);
+        }
+      } finally {
+        if (isActive) {
+          setHasLoadedOnboardingPreference(true);
+        }
+      }
+    }
+
+    loadOnboardingPreference();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isConfigured, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1378,6 +1516,7 @@ export default function BoardScreen() {
   const shelfNamesById = useMemo(() => new Map(shelves.map((shelf) => [shelf.id, shelf.name])), [shelves]);
   const trimmedSearchQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
   const matchingShelves = useMemo(() => searchShelves(resolvedShelves, trimmedSearchQuery), [resolvedShelves, trimmedSearchQuery]);
+  const matchingStacks = useMemo(() => searchStacks(resolvedStacks, trimmedSearchQuery), [resolvedStacks, trimmedSearchQuery]);
   const matchingSnaps = useMemo(
     () => searchSnaps(allSnaps, trimmedSearchQuery, (snap) => (snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? null : null)),
     [allSnaps, shelfNamesById, trimmedSearchQuery],
@@ -1393,18 +1532,24 @@ export default function BoardScreen() {
 
     return ids;
   }, [matchingShelves, matchingSnaps]);
-  const gridSearchFocusShelf = useMemo(() => {
+  const matchingStackIds = useMemo(() => new Set(matchingStacks.map((stack) => stack.id)), [matchingStacks]);
+  const gridSearchFocusNode = useMemo(() => {
     if (!trimmedSearchQuery) {
       return null;
     }
 
     if (matchingShelves[0]) {
-      return matchingShelves[0];
+      return { type: 'shelf' as const, node: matchingShelves[0] };
+    }
+
+    if (matchingStacks[0]) {
+      return { type: 'stack' as const, node: matchingStacks[0] };
     }
 
     const firstShelfSnap = matchingSnaps.find((snap) => snap.shelfId);
-    return firstShelfSnap?.shelfId ? shelvesById.get(firstShelfSnap.shelfId) ?? null : null;
-  }, [matchingShelves, matchingSnaps, shelvesById, trimmedSearchQuery]);
+    const shelf = firstShelfSnap?.shelfId ? shelvesById.get(firstShelfSnap.shelfId) ?? null : null;
+    return shelf ? { type: 'shelf' as const, node: shelf } : null;
+  }, [matchingShelves, matchingSnaps, matchingStacks, shelvesById, trimmedSearchQuery]);
   const trayOnlySearchResultCount = useMemo(() => matchingSnaps.filter((snap) => !snap.shelfId).length, [matchingSnaps]);
 
   useEffect(() => {
@@ -1450,6 +1595,7 @@ export default function BoardScreen() {
   useEffect(() => {
     if (!user?.id) {
       setAllSnaps([]);
+      setHasLoadedSnaps(false);
       setIsSnapCapReached(false);
       return;
     }
@@ -1458,6 +1604,7 @@ export default function BoardScreen() {
       user.id,
       (nextSnaps) => {
         setAllSnaps(nextSnaps);
+        setHasLoadedSnaps(true);
         setIsSnapCapReached(nextSnaps.length === 200);
       },
       (nextError) => {
@@ -1474,19 +1621,23 @@ export default function BoardScreen() {
   }
 
   useEffect(() => {
-    if (viewMode !== 'grid' || !trimmedSearchQuery || !gridSearchFocusShelf || viewport.x === 0 || viewport.y === 0) {
+    if (viewMode !== 'grid' || !trimmedSearchQuery || !gridSearchFocusNode || viewport.x === 0 || viewport.y === 0) {
       lastSearchFocusKeyRef.current = null;
       return;
     }
 
-    const focusKey = `${trimmedSearchQuery}:${gridSearchFocusShelf.id}`;
+    const focusKey = `${trimmedSearchQuery}:${gridSearchFocusNode.type}:${gridSearchFocusNode.node.id}`;
     if (lastSearchFocusKeyRef.current === focusKey) {
       return;
     }
 
     lastSearchFocusKeyRef.current = focusKey;
-    applyTransform(getShelfFocusTransform(gridSearchFocusShelf, viewport, fitScale));
-  }, [fitScale, gridSearchFocusShelf, trimmedSearchQuery, viewMode, viewport]);
+    applyTransform(
+      gridSearchFocusNode.type === 'stack'
+        ? getStackFocusTransform(gridSearchFocusNode.node, viewport, fitScale)
+        : getShelfFocusTransform(gridSearchFocusNode.node, viewport, fitScale),
+    );
+  }, [fitScale, gridSearchFocusNode, trimmedSearchQuery, viewMode, viewport]);
 
   function zoomToFit() {
     if (viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
@@ -1716,6 +1867,65 @@ export default function BoardScreen() {
     }
   }
 
+  async function handleRenameStack(name: string) {
+    if (!user?.id || !renameStackTarget) {
+      return;
+    }
+
+    const stackId = renameStackTarget.id;
+
+    try {
+      setIsRenamingStack(true);
+      setRenameStackError(null);
+      await renameStack(user.id, stackId, name);
+      setStacks((current) => current.map((stack) => (stack.id === stackId ? { ...stack, name } : stack)));
+      setRenameStackTarget(null);
+    } catch (nextError) {
+      setRenameStackError(nextError instanceof Error ? nextError.message : 'Unable to rename this Stack right now.');
+    } finally {
+      setIsRenamingStack(false);
+    }
+  }
+
+  async function handleDeleteStack(stack: Stack) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setDeletingStackId(stack.id);
+      setError(null);
+      await deleteStack(user.id, stack.id);
+      setStacks((current) => current.filter((entry) => entry.id !== stack.id));
+      setThreads((current) => current.filter((thread) => thread.fromType !== 'stack' || thread.fromId !== stack.id));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to delete this Stack right now.');
+    } finally {
+      setDeletingStackId(null);
+    }
+  }
+
+  function handleConfirmDeleteStack(stack: Stack) {
+    setActionStack(null);
+
+    setTimeout(() => {
+      Alert.alert(
+        'Delete Stack?',
+        `Delete "${stack.name}"? Its Shelves and Snaps will stay on your Board. Only this grouping and its cover will be removed.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Stack',
+            style: 'destructive',
+            onPress: () => {
+              void handleDeleteStack(stack);
+            },
+          },
+        ],
+      );
+    }, 0);
+  }
+
   async function handleSelectManualStackCover(uri: string) {
     if (!user?.id || !coverStack) {
       return;
@@ -1768,6 +1978,18 @@ export default function BoardScreen() {
     setIsSearchVisible(true);
   }
 
+  function completeCaptureOnboarding() {
+    setHasCompletedCaptureOnboarding(true);
+
+    if (!user?.id) {
+      return;
+    }
+
+    AsyncStorage.setItem(getCaptureFirstOnboardingStorageKey(user.id), 'true').catch(() => {
+      // Onboarding persistence should not block using the Board.
+    });
+  }
+
   return (
     <Screen style={{ paddingBottom: 118 }}>
       <AppHeader onPressSearch={handleToggleSearch} searchIconName={isSearchVisible ? 'x' : 'search'} searchButtonTestID="board-search-open-button" />
@@ -1791,7 +2013,7 @@ export default function BoardScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               testID="board-search-input"
-              placeholder="Search shelf names, titles, thoughts, or labels"
+              placeholder="Search Stack or Shelf names, Snaps, or labels"
               placeholderTextColor={theme.colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -1811,14 +2033,14 @@ export default function BoardScreen() {
             ) : null}
           </View>
 
-          <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Search shelves by name and search every Snap by title, thought, label, or linked shelf name.</Text>
+          <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Search Stacks and Shelves by name, plus every Snap by title, thought, label, or linked Shelf name.</Text>
         </SurfaceCard>
       ) : null}
 
       {!isConfigured ? (
         <EmptyState
-          title="Restart Expo to activate Firebase"
-          description="The Board will switch to live Shelves after Expo reloads with your Firebase config values."
+          title="Restart Expo to activate Supabase"
+          description="The Board will switch to live Shelves after Expo reloads with your Supabase config values."
         />
       ) : null}
 
@@ -1845,10 +2067,11 @@ export default function BoardScreen() {
         <View>
           <EmptyState
             title="Your Board is waiting for its first Shelf"
-            description={__DEV__ ? 'Create a Shelf here or use sample data in Settings, then arrange your system on the Board.' : 'Create a Shelf, then capture into The Tray and move keepers into your collections.'}
+            description={__DEV__ ? 'Create one Shelf to start your map, or use sample data in Settings to see Tray, Library, Shelves, and Stacks working together.' : 'Create one Shelf to give your first Snaps a home. The Tray stays unfiled, Library finds everything, and this Board becomes your map.'}
           />
-          <View style={{ marginTop: theme.spacing.md }}>
+          <View style={{ marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
             <PillButton label="Create First Shelf" icon="plus" fullWidth onPress={() => setIsCreateShelfVisible(true)} disabled={!user?.id || isCreatingShelf} />
+            <PillButton label="Open The Tray" icon="inbox" variant="secondary" fullWidth onPress={() => router.push('/tray')} />
           </View>
         </View>
       ) : null}
@@ -1860,14 +2083,25 @@ export default function BoardScreen() {
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
             <Text style={[textStyles.titleMd, { marginBottom: 4 }]}>{`"${trimmedSearchQuery}"`}</Text>
             <Text style={textStyles.bodySm}>
-              {matchingShelves.length} shelf match{matchingShelves.length === 1 ? '' : 'es'} and {matchingSnaps.length} snap result{matchingSnaps.length === 1 ? '' : 's'}
+              {matchingStacks.length} Stack match{matchingStacks.length === 1 ? '' : 'es'}, {matchingShelves.length} Shelf match{matchingShelves.length === 1 ? '' : 'es'}, and {matchingSnaps.length} Snap result{matchingSnaps.length === 1 ? '' : 's'}
             </Text>
           </SurfaceCard>
 
-          {matchingShelves.length === 0 && matchingSnaps.length === 0 ? (
-            <EmptyState title="No matching results" description="Try a shelf name, a title word, a phrase from your thought, or one of your labels." />
+          {matchingStacks.length === 0 && matchingShelves.length === 0 && matchingSnaps.length === 0 ? (
+            <EmptyState title="No matching results" description="Try a Stack or Shelf name, a title word, a phrase from your thought, or one of your labels." />
           ) : (
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 124, gap: theme.spacing.md }}>
+              {matchingStacks.length > 0 ? <Text style={textStyles.eyebrow}>Stacks</Text> : null}
+              {matchingStacks.map((stack) => (
+                <StackListItem
+                  key={stack.id}
+                  stack={stack}
+                  coverImageUri={stackCoverImageUris.get(stack.id) ?? null}
+                  shelfCount={shelfCountsByStackId.get(stack.id) ?? 0}
+                  onPress={() => setActionStack(stack)}
+                />
+              ))}
+
               {matchingShelves.length > 0 ? <Text style={textStyles.eyebrow}>Shelves</Text> : null}
               {matchingShelves.map((shelf) => (
                 <ShelfListItem
@@ -1882,20 +2116,14 @@ export default function BoardScreen() {
                 />
               ))}
 
-              {matchingShelves.length > 0 && matchingSnaps.length > 0 ? <Text style={[textStyles.eyebrow, { marginTop: theme.spacing.sm }]}>Snaps</Text> : null}
-              {matchingShelves.length === 0 && matchingSnaps.length > 0 ? <Text style={textStyles.eyebrow}>Snaps</Text> : null}
+              {matchingSnaps.length > 0 ? <Text style={textStyles.eyebrow}>Snaps</Text> : null}
               {matchingSnaps.map((snap) => (
                 <SnapSearchResult
                   key={snap.id}
                   snap={snap}
                   shelfName={snap.shelfId ? shelfNamesById.get(snap.shelfId) ?? 'Shelf' : 'The Tray'}
                   onPress={() => {
-                    if (snap.shelfId) {
-                      router.push(`/shelf/${snap.shelfId}`);
-                      return;
-                    }
-
-                    router.push('/tray');
+                    router.push(`/snap/${snap.id}`);
                   }}
                 />
               ))}
@@ -1948,8 +2176,8 @@ export default function BoardScreen() {
                   <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.xs }]}>Board Search</Text>
                   <Text style={[textStyles.titleMd, { marginBottom: 4 }]} numberOfLines={1}>{`"${trimmedSearchQuery}"`}</Text>
                   <Text style={textStyles.bodySm}>
-                    {matchingShelves.length} shelf match{matchingShelves.length === 1 ? '' : 'es'} and {matchingSnaps.length} snap result{matchingSnaps.length === 1 ? '' : 's'}.
-                    {gridSearchFocusShelf ? ` Zoomed to ${gridSearchFocusShelf.name}.` : ' No Shelf on the Board to zoom to.'}
+                    {matchingStacks.length} Stack match{matchingStacks.length === 1 ? '' : 'es'}, {matchingShelves.length} Shelf match{matchingShelves.length === 1 ? '' : 'es'}, and {matchingSnaps.length} Snap result{matchingSnaps.length === 1 ? '' : 's'}.
+                    {gridSearchFocusNode ? ` Zoomed to ${gridSearchFocusNode.node.name}.` : ' No organization on the Board to zoom to.'}
                   </Text>
                   {trayOnlySearchResultCount > 0 ? (
                     <Text style={[textStyles.bodySm, { marginTop: theme.spacing.xs }]}>{trayOnlySearchResultCount} result{trayOnlySearchResultCount === 1 ? '' : 's'} live in The Tray.</Text>
@@ -1959,7 +2187,7 @@ export default function BoardScreen() {
               <View
                 style={{ marginBottom: theme.spacing.md }}
               >
-                <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>{trimmedSearchQuery ? 'Matching Shelves are highlighted. Clear search to return to arranging the full Board.' : 'Pinch or use controls to zoom. Drag Shelves to arrange the system.'}</Text>
+                <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>{trimmedSearchQuery ? 'Matching Stacks and Shelves are highlighted. Clear search to return to arranging the full Board.' : 'Pinch or use controls to zoom. Drag Stacks and Shelves to arrange the system.'}</Text>
               </View>
               <View
                 onLayout={(event) => {
@@ -2034,6 +2262,7 @@ export default function BoardScreen() {
                         key={stack.id}
                         stack={stack}
                         scale={boardTransform.scale}
+                        isHighlighted={trimmedSearchQuery ? matchingStackIds.has(stack.id) : false}
                         shelfCount={shelfCountsByStackId.get(stack.id) ?? 0}
                         coverImageUri={stackCoverImageUris.get(stack.id) ?? null}
                         onPress={() => setActionStack(stack)}
@@ -2110,8 +2339,20 @@ export default function BoardScreen() {
               contentContainerStyle={{ paddingBottom: 124 }}
             >
               <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md }}>
-                <Text style={textStyles.bodySm}>Use List as a readable map of every Shelf, including empty containers and threaded relationships.</Text>
+                <Text style={textStyles.bodySm}>Use List as a readable map of every Stack and Shelf, including empty containers and grouped relationships.</Text>
               </SurfaceCard>
+              {resolvedStacks.length > 0 ? <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stacks</Text> : null}
+              {resolvedStacks.map((stack) => (
+                <View key={stack.id} style={{ marginBottom: theme.spacing.md }}>
+                  <StackListItem
+                    stack={stack}
+                    coverImageUri={stackCoverImageUris.get(stack.id) ?? null}
+                    shelfCount={shelfCountsByStackId.get(stack.id) ?? 0}
+                    onPress={() => setActionStack(stack)}
+                  />
+                </View>
+              ))}
+              {resolvedShelves.length > 0 ? <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Shelves</Text> : null}
               {resolvedShelves.map((shelf, index) => (
                 <View key={shelf.id} style={{ marginBottom: index === resolvedShelves.length - 1 ? 0 : theme.spacing.md }}>
                   <ShelfListItem
@@ -2148,6 +2389,31 @@ export default function BoardScreen() {
           </Pressable>
         </View>
       ) : null}
+
+      <CaptureFirstOnboardingModal
+        visible={shouldShowCaptureFirstOnboarding({
+          hasCompleted: hasCompletedCaptureOnboarding,
+          hasLoadedAccountData: hasLoadedSnaps && !isLoadingShelves,
+          hasLoadedPreference: hasLoadedOnboardingPreference,
+          isCaptureVisible: isFirstCaptureVisible,
+          isConfigured,
+          snapCount: allSnaps.length,
+          userId: user?.id,
+        })}
+        onChoosePhotos={() => setIsFirstCaptureVisible(true)}
+        onSkip={completeCaptureOnboarding}
+      />
+
+      <CreateSnapModal
+        visible={isFirstCaptureVisible}
+        userId={user?.id ?? null}
+        shelves={shelves}
+        titleText="Choose First Photos"
+        submitLabel="Save First Snap"
+        source="camera-roll"
+        onClose={() => setIsFirstCaptureVisible(false)}
+        onSaved={() => completeCaptureOnboarding()}
+      />
 
       <CreateShelfModal
         visible={isCreateShelfVisible}
@@ -2198,18 +2464,47 @@ export default function BoardScreen() {
       <ActionSheetModal
         visible={actionStack !== null}
         title="Stack Actions"
-        description={actionStack ? `Update the visual cover for "${actionStack.name}".` : undefined}
-        actions={[
+        description={actionStack ? `Manage "${actionStack.name}" without changing the Shelves or Snaps inside it.` : undefined}
+        actions={actionStack ? [
+          {
+            label: 'Rename Stack',
+            icon: 'edit-3',
+            disabled: deletingStackId !== null,
+            onPress: () => {
+              setRenameStackTarget(actionStack);
+              setActionStack(null);
+            },
+          },
           {
             label: 'Change Cover',
             icon: 'image',
+            disabled: deletingStackId !== null,
             onPress: () => {
               setCoverStack(actionStack);
               setActionStack(null);
             },
           },
-        ]}
+          {
+            label: 'Delete Stack',
+            icon: 'trash-2',
+            tone: 'destructive' as const,
+            disabled: deletingStackId !== null,
+            onPress: () => handleConfirmDeleteStack(actionStack),
+          },
+        ] : []}
         onClose={() => setActionStack(null)}
+      />
+      <RenameOrganizationModal
+        visible={renameStackTarget !== null}
+        type="Stack"
+        currentName={renameStackTarget?.name ?? ''}
+        isSubmitting={isRenamingStack}
+        error={renameStackError}
+        onClose={() => {
+          setRenameStackTarget(null);
+          setRenameStackError(null);
+        }}
+        onSubmit={handleRenameStack}
       />
       <StackCoverModal
         visible={coverStack !== null}

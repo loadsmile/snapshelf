@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Switch, Text, View } from 'react-native';
 
@@ -10,6 +11,7 @@ import { seedSampleData } from '@/features/sample-data/api';
 import { listAllSnaps } from '@/features/snaps/api';
 import { AppHeader } from '@/shared/components/AppHeader';
 import { FormField } from '@/shared/components/FormField';
+import { OnboardingWelcomeModal } from '@/shared/components/OnboardingWelcomeModal';
 import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
@@ -30,9 +32,11 @@ export default function SettingsScreen() {
     updateDisplayName,
     user,
   } = useAuth();
+  const router = useRouter();
   const { mode, setMode } = useThemeMode();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isTutorialVisible, setIsTutorialVisible] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isCheckingMedia, setIsCheckingMedia] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -99,7 +103,7 @@ export default function SettingsScreen() {
 
       setMediaHealth(summary);
       if (summary.unavailable > 0) {
-        setMediaHealthMessage('Local file storage is unavailable on this device right now. Snap metadata is still safe in Firestore.');
+        setMediaHealthMessage('Local file storage is unavailable on this device right now. Snap metadata is still safe in the backend.');
       } else if (summary.missing > 0) {
         setMediaHealthMessage('Some Snap images are missing from this device. Their titles, notes, labels, and Shelf assignments are still available.');
       } else {
@@ -157,6 +161,16 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleTutorialOpenBoard() {
+    setIsTutorialVisible(false);
+    router.push('/board');
+  }
+
+  function handleTutorialOpenTray() {
+    setIsTutorialVisible(false);
+    router.push('/tray');
+  }
+
   return (
     <Screen scrollable contentContainerStyle={{ paddingBottom: 150 }}>
       <AppHeader />
@@ -182,6 +196,20 @@ export default function SettingsScreen() {
             ios_backgroundColor={theme.colors.surfaceSoft}
           />
         </View>
+      </SurfaceCard>
+
+      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Guided Tour</Text>
+        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Revisit the tutorial</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Walk through The Tray, Shelves, Board, and Library again whenever you need a refresher.</Text>
+        <PillButton
+          label="Revisit Tutorial"
+          icon="compass"
+          variant="secondary"
+          onPress={() => setIsTutorialVisible(true)}
+          testID="settings-revisit-tutorial-button"
+          fullWidth
+        />
       </SurfaceCard>
 
       {isConfigured ? (
@@ -228,6 +256,7 @@ export default function SettingsScreen() {
               placeholder="Mariana"
               autoCapitalize="words"
               autoCorrect={false}
+              maxLength={80}
               error={profileError}
             />
 
@@ -312,7 +341,7 @@ export default function SettingsScreen() {
               <View style={{ height: 1, backgroundColor: theme.colors.borderSoft, marginVertical: theme.spacing.lg }} />
 
               <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Local Media Health</Text>
-              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Check whether Snap image files saved on this device still match Firestore metadata.</Text>
+              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Check whether Snap image files saved on this device still match backend metadata.</Text>
               <PillButton
                 label={isCheckingMedia ? 'Checking Media...' : 'Check Local Media'}
                 icon="hard-drive"
@@ -330,11 +359,20 @@ export default function SettingsScreen() {
       ) : (
         <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.lg }}>
           <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Developer Setup</Text>
-          <Text style={[textStyles.titleLg, { marginBottom: theme.spacing.sm }]}>Firebase is not configured</Text>
-          <Text style={[textStyles.bodyMd, { marginBottom: configError ? theme.spacing.sm : 0 }]}>Add the required EXPO_PUBLIC_FIREBASE_* values to your local .env file, then restart Expo.</Text>
+          <Text style={[textStyles.titleLg, { marginBottom: theme.spacing.sm }]}>Supabase is not configured</Text>
+          <Text style={[textStyles.bodyMd, { marginBottom: configError ? theme.spacing.sm : 0 }]}>Add the required EXPO_PUBLIC_SUPABASE_* values to your local .env file, then restart Expo.</Text>
           {configError ? <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>{configError}</Text> : null}
         </SurfaceCard>
       )}
+
+      <OnboardingWelcomeModal
+        visible={isTutorialVisible}
+        onDismiss={() => setIsTutorialVisible(false)}
+        onCreateFirstShelf={handleTutorialOpenBoard}
+        onOpenTray={handleTutorialOpenTray}
+        finalPrimaryLabel="Open Board"
+        finalPrimaryIcon="map"
+      />
     </Screen>
   );
 }

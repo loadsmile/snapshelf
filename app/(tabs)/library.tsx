@@ -1,11 +1,18 @@
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
 import {
+  bulkDeleteSnaps,
+  bulkFavoriteSnaps,
+  bulkMoveSnaps,
+  bulkSetSnapsArchived,
   deleteSnap,
   moveSnapToShelf,
+  removeSnapLocalImageReference,
+  replaceSnapLocalImage,
   setSnapArchived,
   setSnapFavorite,
   subscribeToAllSnaps,
@@ -19,13 +26,17 @@ import type { Shelf } from '@/features/shelves/types';
 import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
 import { AppHeader } from '@/shared/components/AppHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { FromYourArchiveRow } from '@/shared/components/FromYourArchiveRow';
 import { LibraryFilterSheet } from '@/shared/components/LibraryFilterSheet';
 import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { ShelfPickerModal } from '@/shared/components/ShelfPickerModal';
+import { SnapBulkActionBar } from '@/shared/components/SnapBulkActionBar';
 import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
+import { useArchiveRediscovery } from '@/shared/hooks/useArchiveRediscovery';
+import { useSnapSelection } from '@/shared/hooks/useSnapSelection';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
@@ -69,6 +80,7 @@ function CompactControlPill({
   isActive,
   onPress,
   accessibilityLabel,
+  disabled = false,
 }: {
   label: string;
   detail?: string;
@@ -79,12 +91,14 @@ function CompactControlPill({
   isActive: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
+  disabled?: boolean;
 }) {
   const textColor = isActive ? theme.colors.surface : theme.colors.text;
 
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       style={[
@@ -110,6 +124,7 @@ function CompactControlPill({
               borderColor: theme.colors.borderSoft,
             },
         isActive ? theme.shadows.button : null,
+        disabled ? { opacity: 0.5 } : null,
       ]}
     >
       <Feather name={icon} size={15} color={textColor} />
@@ -221,18 +236,32 @@ function LibrarySnapCard({
   isBusy,
   onOpenContext,
   onOpenActions,
+  isSelectionMode,
+  isSelected,
+  onToggleSelected,
+  selectionDisabled,
 }: {
   snap: Snap;
   shelfLabel: string;
   isBusy: boolean;
   onOpenContext: () => void;
   onOpenActions: () => void;
+  isSelectionMode: boolean;
+  isSelected: boolean;
+  onToggleSelected: () => void;
+  selectionDisabled: boolean;
 }) {
   const colors = getSnapPalette(snap);
 
   return (
-    <Pressable onPress={onOpenContext}>
-      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md }}>
+    <Pressable
+      onPress={isSelectionMode ? onToggleSelected : onOpenContext}
+      disabled={isSelectionMode && selectionDisabled}
+      accessibilityRole={isSelectionMode ? 'checkbox' : 'button'}
+      accessibilityState={isSelectionMode ? { checked: isSelected } : undefined}
+      accessibilityLabel={isSelectionMode ? `${isSelected ? 'Deselect' : 'Select'} ${getSnapHeadline(snap)}` : `Open ${getSnapHeadline(snap)}`}
+    >
+      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.md, borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? theme.colors.primary : theme.colors.borderSoft }}>
         <SnapArtwork
           snap={snap}
           fallbackColors={colors}
@@ -251,7 +280,11 @@ function LibrarySnapCard({
               {snap.isFavorite ? <SectionLabel label="Favorite" /> : null}
               {snap.isArchived ? <SectionLabel label="Archived" /> : null}
             </View>
-            {isBusy ? (
+            {isSelectionMode ? (
+              <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: isSelected ? theme.colors.primary : theme.colors.surface }}>
+                <Feather name={isSelected ? 'check' : 'circle'} size={17} color={isSelected ? theme.colors.surface : theme.colors.textMuted} />
+              </View>
+            ) : isBusy ? (
               <ActivityIndicator size="small" color={theme.colors.surface} />
             ) : (
               <Pressable
@@ -260,6 +293,8 @@ function LibrarySnapCard({
                   onOpenActions();
                 }}
                 hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={`Actions for ${getSnapHeadline(snap)}`}
                 style={{ padding: 4 }}
               >
                 <Feather name="more-vertical" size={18} color={theme.colors.surface} />
@@ -307,6 +342,7 @@ function LibrarySnapCard({
 }
 
 export default function LibraryScreen() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const { isConfigured, user } = useAuth();
   const [snaps, setSnaps] = useState<Snap[]>([]);
@@ -328,7 +364,10 @@ export default function LibraryScreen() {
   const [isFilterSheetVisible, setIsFilterSheetVisible] = useState(false);
   const [isSortSheetVisible, setIsSortSheetVisible] = useState(false);
   const [busySnapId, setBusySnapId] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<'move' | 'favorite' | 'archive' | 'delete' | 'edit' | null>(null);
+  const [busyAction, setBusyAction] = useState<'move' | 'favorite' | 'archive' | 'delete' | 'edit' | 'image' | null>(null);
+  const [isBulkBusy, setIsBulkBusy] = useState(false);
+  const [isBulkMoveVisible, setIsBulkMoveVisible] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isCompactWidth = width < 390;
@@ -499,6 +538,14 @@ export default function LibraryScreen() {
     activeFilterCount,
   });
   const noResultsCopy = getNoResultsCopy(hasSearch, activeFilterCount);
+  const visibleSnapIds = useMemo(() => visibleSnaps.map((snap) => snap.id), [visibleSnaps]);
+  const selectionScopeKey = `${user?.id ?? 'signed-out'}:${deferredSearchQuery}:${status}:${favoritesOnly}:${selectedShelfId}:${selectedSource}:${selectedLabel}:${selectedDateRange}`;
+  const selection = useSnapSelection(visibleSnapIds, selectionScopeKey);
+  const selectedSnaps = useMemo(() => snaps.filter((snap) => selection.selectedIds.has(snap.id)), [selection.selectedIds, snaps]);
+  const selectedActiveSnaps = useMemo(() => selectedSnaps.filter((snap) => !snap.isArchived), [selectedSnaps]);
+  const selectedArchivedSnaps = useMemo(() => selectedSnaps.filter((snap) => snap.isArchived), [selectedSnaps]);
+  const archiveRediscovery = useArchiveRediscovery(snaps);
+  const showArchiveRediscovery = !hasSearch && activeFilterCount === 0;
 
   function resetSheetFilters() {
     setStatus('active');
@@ -515,7 +562,7 @@ export default function LibraryScreen() {
     setSort('newest');
   }
 
-  async function runSnapMutation(snap: Snap, mutation: 'move' | 'favorite' | 'archive' | 'delete' | 'edit', action: () => Promise<void>) {
+  async function runSnapMutation(snap: Snap, mutation: 'move' | 'favorite' | 'archive' | 'delete' | 'edit' | 'image', action: () => Promise<void>) {
     try {
       setBusySnapId(snap.id);
       setBusyAction(mutation);
@@ -591,6 +638,46 @@ export default function LibraryScreen() {
     });
   }
 
+  async function handleReplaceSnapImage(snap: Snap, sourceUri: string) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setBusySnapId(snap.id);
+      setBusyAction('image');
+      setError(null);
+      const updatedSnap = await replaceSnapLocalImage(user.id, snap, sourceUri);
+      setDetailSnap(updatedSnap);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to replace this image right now.');
+      throw nextError;
+    } finally {
+      setBusySnapId(null);
+      setBusyAction(null);
+    }
+  }
+
+  async function handleRemoveSnapImageReference(snap: Snap) {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setBusySnapId(snap.id);
+      setBusyAction('image');
+      setError(null);
+      const updatedSnap = await removeSnapLocalImageReference(user.id, snap);
+      setDetailSnap(updatedSnap);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to remove this image reference right now.');
+      throw nextError;
+    } finally {
+      setBusySnapId(null);
+      setBusyAction(null);
+    }
+  }
+
   function handleConfirmDelete(snap: Snap) {
     setActionSnap(null);
 
@@ -608,19 +695,58 @@ export default function LibraryScreen() {
     }, 0);
   }
 
+  async function runBulkAction(action: () => ReturnType<typeof bulkFavoriteSnaps>, successVerb: string) {
+    try {
+      setIsBulkBusy(true);
+      setBulkMessage(null);
+      const result = await action();
+      selection.applyResult(result);
+      setBulkMessage(result.failures.length > 0
+        ? `${result.succeededIds.length} ${successVerb}; ${result.failures.length} could not be confirmed and remain selected.`
+        : `${result.succeededIds.length} ${successVerb}.`);
+      return result;
+    } catch (nextError) {
+      setBulkMessage(nextError instanceof Error ? nextError.message : 'Unable to update the selected Snaps.');
+      return null;
+    } finally {
+      setIsBulkBusy(false);
+    }
+  }
+
+  async function handleBulkMove(destination: Shelf | null) {
+    if (!user?.id) {
+      return;
+    }
+
+    const result = await runBulkAction(() => bulkMoveSnaps(user.id, [...selection.selectedIds], destination?.id ?? null), 'moved');
+    if (result) {
+      setIsBulkMoveVisible(false);
+    }
+  }
+
+  function handleBulkDeleteConfirmation() {
+    Alert.alert('Delete selected Snaps?', `This removes ${selection.selectedIds.size} selected Snaps and their current-device images.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => void runBulkAction(() => bulkDeleteSnaps(user?.id ?? '', selectedSnaps), 'deleted') },
+    ]);
+  }
+
   return (
     <Screen style={{ paddingBottom: 118 }}>
       <AppHeader searchIconName="book-open" />
 
       <View style={{ marginBottom: theme.spacing.lg }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
         <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Library</Text>
+        <CompactControlPill label={selection.isSelectionMode ? 'Clear' : 'Select'} icon={selection.isSelectionMode ? 'x' : 'check-square'} isActive={selection.isSelectionMode} onPress={selection.isSelectionMode ? selection.clear : selection.enter} disabled={isBulkBusy || visibleSnaps.length === 0} />
+        </View>
         <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Find any Snap fast, whether it is still in The Tray, filed into a Shelf, or archived for later.</Text>
       </View>
 
       {!isConfigured ? (
         <EmptyState
-          title="Restart Expo to activate Firebase"
-          description="The Library will switch to live Snaps after Expo reloads with your Firebase config values."
+          title="Restart Expo to activate Supabase"
+          description="The Library will switch to live Snaps after Expo reloads with your Supabase config values."
         />
       ) : null}
 
@@ -732,6 +858,22 @@ export default function LibraryScreen() {
         ) : null}
       </View>
 
+      {selection.isSelectionMode ? (
+        <Pressable
+          onPress={selection.toggleAll}
+          disabled={isBulkBusy}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: selection.selectAllState }}
+          accessibilityLabel={`${selection.selectAllState === true ? 'Deselect' : 'Select'} all ${visibleSnaps.length} visible loaded Snaps`}
+          style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginBottom: theme.spacing.md }}
+        >
+          <Feather name={selection.selectAllState === true ? 'check-square' : selection.selectAllState === 'mixed' ? 'minus-square' : 'square'} size={20} color={theme.colors.primary} />
+          <Text style={textStyles.bodySm}>Select all {visibleSnaps.length} visible loaded results</Text>
+        </Pressable>
+      ) : null}
+
+      {bulkMessage ? <Text accessibilityLiveRegion="polite" style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{bulkMessage}</Text> : null}
+
       {isLoadingSnaps || isLoadingShelves ? (
         <SurfaceCard style={{ padding: theme.spacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
@@ -767,11 +909,35 @@ export default function LibraryScreen() {
               isBusy={busySnapId === item.id}
               onOpenContext={() => setDetailSnap(item)}
               onOpenActions={() => setActionSnap(item)}
+              isSelectionMode={selection.isSelectionMode}
+              isSelected={selection.selectedIds.has(item.id)}
+              onToggleSelected={() => selection.toggle(item.id)}
+              selectionDisabled={isBulkBusy}
             />
           )}
+          ListHeaderComponent={showArchiveRediscovery && !selection.isSelectionMode ? (
+            <View style={{ marginBottom: theme.spacing.lg }}>
+              <FromYourArchiveRow items={archiveRediscovery.items} onPressSnap={(snap) => router.push(`/snap/${snap.id}`)} />
+            </View>
+          ) : null}
           contentContainerStyle={{ paddingTop: theme.spacing.sm, paddingBottom: 150 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+        />
+      ) : null}
+
+      {selection.isSelectionMode ? (
+        <SnapBulkActionBar
+          selectedCount={selection.selectedIds.size}
+          isBusy={isBulkBusy}
+          actions={[
+            { label: 'Move', icon: 'folder', disabled: selection.selectedIds.size === 0, onPress: () => setIsBulkMoveVisible(true) },
+            { label: 'Favorite', icon: 'star', disabled: selection.selectedIds.size === 0, onPress: () => void runBulkAction(() => bulkFavoriteSnaps(user?.id ?? '', [...selection.selectedIds]), 'favorited') },
+            ...(selectedActiveSnaps.length > 0 ? [{ label: 'Archive', icon: 'archive' as const, affectedCount: selectedActiveSnaps.length, onPress: () => void runBulkAction(() => bulkSetSnapsArchived(user?.id ?? '', selectedActiveSnaps.map((snap) => snap.id), true), 'archived') }] : []),
+            ...(selectedArchivedSnaps.length > 0 ? [{ label: 'Restore', icon: 'rotate-ccw' as const, affectedCount: selectedArchivedSnaps.length, onPress: () => void runBulkAction(() => bulkSetSnapsArchived(user?.id ?? '', selectedArchivedSnaps.map((snap) => snap.id), false), 'restored') }] : []),
+            { label: 'Delete', icon: 'trash-2', tone: 'destructive', disabled: selection.selectedIds.size === 0, onPress: handleBulkDeleteConfirmation },
+            { label: 'Clear', icon: 'x', onPress: selection.clear },
+          ]}
         />
       ) : null}
 
@@ -825,6 +991,18 @@ export default function LibraryScreen() {
         onSelect={(destination) => {
           void handleMoveSnap(destination);
         }}
+      />
+
+      <ShelfPickerModal
+        visible={isBulkMoveVisible}
+        shelves={shelves}
+        title="Move Selected Snaps"
+        description={`Choose a destination for ${selection.selectedIds.size} selected Snaps.`}
+        includeTrayOption
+        trayLabel="The Tray"
+        isSubmitting={isBulkBusy}
+        onClose={() => setIsBulkMoveVisible(false)}
+        onSelect={handleBulkMove}
       />
 
       <ActionSheetModal
@@ -892,11 +1070,14 @@ export default function LibraryScreen() {
         isFavoriteLoading={busySnapId === detailSnap?.id && busyAction === 'favorite'}
         isArchiveLoading={busySnapId === detailSnap?.id && busyAction === 'archive'}
         isDeleteLoading={busySnapId === detailSnap?.id && busyAction === 'delete'}
+        isImageLoading={busySnapId === detailSnap?.id && busyAction === 'image'}
         error={error}
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
         onToggleFavorite={handleToggleFavorite}
         onToggleArchived={handleToggleArchived}
+        onReplaceImage={handleReplaceSnapImage}
+        onRemoveImageReference={handleRemoveSnapImageReference}
         onDelete={handleConfirmDelete}
       />
     </Screen>

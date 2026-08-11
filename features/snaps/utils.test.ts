@@ -18,6 +18,7 @@ function buildSnap(overrides: Partial<Snap>): Snap {
     shelfId: overrides.shelfId ?? null,
     title: overrides.title ?? null,
     imageUrl: overrides.imageUrl ?? null,
+    sourceUrl: overrides.sourceUrl ?? null,
     localPath: overrides.localPath ?? null,
     thought: overrides.thought ?? null,
     labels: overrides.labels ?? [],

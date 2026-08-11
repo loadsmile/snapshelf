@@ -14,6 +14,10 @@ export type UserProfile = {
   updatedAt: Date | null;
 };
 
+export type SignUpResult = {
+  requiresEmailConfirmation: boolean;
+};
+
 export type AuthContextValue = {
   status: AuthStatus;
   user: AuthUser | null;
@@ -21,7 +25,7 @@ export type AuthContextValue = {
   isConfigured: boolean;
   configError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<void>;
   sendPasswordReset: () => Promise<void>;

@@ -19,6 +19,7 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
 
   async function handleSignUp() {
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
@@ -39,7 +40,12 @@ export default function SignUpScreen() {
     try {
       setIsSubmitting(true);
       setError(null);
-      await signUp(email.trim(), password);
+      const normalizedEmail = email.trim();
+      const result = await signUp(normalizedEmail, password);
+
+      if (result.requiresEmailConfirmation) {
+        setConfirmationEmail(normalizedEmail);
+      }
     } catch (nextError) {
       setError(getAuthErrorMessage(nextError));
     } finally {
@@ -57,57 +63,67 @@ export default function SignUpScreen() {
 
       {configError ? (
         <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Firebase Setup Needed</Text>
+          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Supabase Setup Needed</Text>
           <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>{configError}</Text>
-          <Text style={textStyles.bodySm}>Add your Firebase keys locally, then restart Expo to enable sign-up.</Text>
+          <Text style={textStyles.bodySm}>Add your Supabase public values locally, then restart Expo to enable sign-up.</Text>
         </SurfaceCard>
       ) : null}
 
       <SurfaceCard style={{ padding: theme.spacing.lg }}>
-        <FormField
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@example.com"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          autoComplete="email"
-        />
-        <FormField
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Choose a password"
-          secureTextEntry
-          textContentType="newPassword"
-          autoComplete="new-password"
-        />
-        <FormField
-          label="Confirm Password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="Re-enter your password"
-          secureTextEntry
-          textContentType="newPassword"
-          autoComplete="new-password"
-        />
+        {confirmationEmail ? (
+          <>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Check Your Email</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>We sent a confirmation link to {confirmationEmail}. Open it on this device to finish creating your account.</Text>
+            <PillButton label="Back to Sign In" onPress={() => router.replace('/sign-in')} fullWidth />
+          </>
+        ) : (
+          <>
+            <FormField
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              textContentType="emailAddress"
+              autoComplete="email"
+            />
+            <FormField
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Choose a password"
+              secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
+            />
+            <FormField
+              label="Confirm Password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Re-enter your password"
+              secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
+            />
 
-        {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
+            {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
 
-        <PillButton
-          label={isSubmitting ? 'Creating Account...' : 'Create Account'}
-          onPress={handleSignUp}
-          disabled={isSubmitting || !isConfigured}
-          fullWidth
-        />
+            <PillButton
+              label={isSubmitting ? 'Creating Account...' : 'Create Account'}
+              onPress={handleSignUp}
+              disabled={isSubmitting || !isConfigured}
+              fullWidth
+            />
 
-        <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg }}>
-          <Text style={textStyles.bodySm}>Already have an account? </Text>
-          <Pressable onPress={() => router.replace('/sign-in')}>
-            <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>Sign in</Text>
-          </Pressable>
-        </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg }}>
+              <Text style={textStyles.bodySm}>Already have an account? </Text>
+              <Pressable onPress={() => router.replace('/sign-in')}>
+                <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>Sign in</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
       </SurfaceCard>
     </Screen>
   );

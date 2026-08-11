@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 
 import { FormField } from '@/shared/components/FormField';
+import { getOrganizationNameError, ORGANIZATION_NAME_MAX_LENGTH, validateOrganizationName } from '@/features/organizations/name';
 import { PillButton } from '@/shared/components/PillButton';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { theme } from '@/shared/theme';
@@ -27,15 +28,15 @@ export function CreateStackModal({ visible, isSubmitting = false, error, onClose
   }, [visible]);
 
   async function handleSubmit() {
-    const trimmed = name.trim();
+    const validationError = getOrganizationNameError(name, 'Stack');
 
-    if (!trimmed) {
-      setLocalError('Stack name is required.');
+    if (validationError) {
+      setLocalError(validationError);
       return;
     }
 
     setLocalError(null);
-    await onSubmit({ name: trimmed });
+    await onSubmit({ name: validateOrganizationName(name, 'Stack') });
   }
 
   return (
@@ -54,9 +55,9 @@ export function CreateStackModal({ visible, isSubmitting = false, error, onClose
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Stack</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Create a visual group for related Shelves on your Board. Snaps still live inside Shelves.</Text>
 
-            <FormField label="Stack Name" value={name} onChangeText={setName} placeholder="Travel Ideas" autoCapitalize="words" />
+            <FormField label="Stack Name" value={name} onChangeText={setName} error={localError} placeholder="Travel Ideas" autoCapitalize="words" maxLength={ORGANIZATION_NAME_MAX_LENGTH} />
 
-            {localError || error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{localError ?? error}</Text> : null}
+            {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
 
             <PillButton label={isSubmitting ? 'Creating Stack...' : 'Create Stack'} icon="layers" fullWidth onPress={handleSubmit} disabled={isSubmitting} />
 

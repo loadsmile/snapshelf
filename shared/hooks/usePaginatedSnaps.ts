@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { listShelfSnaps, listTraySnaps, subscribeToShelfSnaps, subscribeToTraySnaps, type SnapCursor } from '@/features/snaps/api';
-import { appendUniqueSnaps, mergeFirstPageSnaps } from '@/features/snaps/pagination';
+import { appendUniqueSnaps } from '@/features/snaps/pagination';
 import type { Snap } from '@/features/snaps/types';
 
 const PAGE_SIZE = 20;
@@ -14,8 +14,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
   const [error, setError] = useState<string | null>(null);
 
   const cursorRef = useRef<SnapCursor | null>(null);
-  const hasLoadedAdditionalPagesRef = useRef(false);
-  const firstPageIdsRef = useRef<Set<string> | undefined>(undefined);
+  const loadedCountRef = useRef(PAGE_SIZE);
 
   useEffect(() => {
     if (!userId) {
@@ -25,8 +24,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setHasMore(false);
       setError(null);
       cursorRef.current = null;
-      hasLoadedAdditionalPagesRef.current = false;
-      firstPageIdsRef.current = undefined;
+      loadedCountRef.current = PAGE_SIZE;
       return;
     }
 
@@ -37,8 +35,7 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setHasMore(false);
       setError(null);
       cursorRef.current = null;
-      hasLoadedAdditionalPagesRef.current = false;
-      firstPageIdsRef.current = undefined;
+      loadedCountRef.current = PAGE_SIZE;
       return;
     }
 
@@ -48,17 +45,17 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
     setHasMore(true);
     setError(null);
     cursorRef.current = null;
-    hasLoadedAdditionalPagesRef.current = false;
-    firstPageIdsRef.current = undefined;
+    loadedCountRef.current = PAGE_SIZE;
 
-    const handleUpdate = (nextSnaps: Snap[], nextCursor: SnapCursor | null) => {
-      setSnaps((current) => mergeFirstPageSnaps(current, nextSnaps, firstPageIdsRef.current));
-      firstPageIdsRef.current = new Set(nextSnaps.map((snap) => snap.id));
-
-      if (!hasLoadedAdditionalPagesRef.current) {
-        cursorRef.current = nextCursor;
-        setHasMore(nextSnaps.length === PAGE_SIZE);
+    const handleUpdate = (nextSnaps: Snap[], nextCursor: SnapCursor | null, requestedCount: number) => {
+      if (requestedCount < loadedCountRef.current) {
+        return;
       }
+
+      setSnaps(nextSnaps);
+      loadedCountRef.current = Math.max(PAGE_SIZE, nextSnaps.length);
+      cursorRef.current = nextCursor;
+      setHasMore(nextSnaps.length === requestedCount);
 
       setError(null);
       setLoading(false);
@@ -70,7 +67,10 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
       setLoadingMore(false);
     };
 
-    const unsubscribe = shelfId === null ? subscribeToTraySnaps(userId, handleUpdate, handleError, undefined, PAGE_SIZE) : subscribeToShelfSnaps(userId, shelfId, handleUpdate, handleError, undefined, PAGE_SIZE);
+    const getLoadedCount = () => loadedCountRef.current;
+    const unsubscribe = shelfId === null
+      ? subscribeToTraySnaps(userId, handleUpdate, handleError, undefined, getLoadedCount)
+      : subscribeToShelfSnaps(userId, shelfId, handleUpdate, handleError, undefined, getLoadedCount);
 
     return unsubscribe;
   }, [shelfId, userId]);
@@ -85,9 +85,12 @@ export function usePaginatedSnaps(userId: string | null | undefined, shelfId: st
     try {
       const nextPage = shelfId === null ? await listTraySnaps(userId, cursorRef.current, PAGE_SIZE) : await listShelfSnaps(userId, shelfId, cursorRef.current, PAGE_SIZE);
 
-      hasLoadedAdditionalPagesRef.current = true;
       cursorRef.current = nextPage.cursor ?? cursorRef.current;
-      setSnaps((current) => appendUniqueSnaps(current, nextPage.snaps));
+      setSnaps((current) => {
+        const nextSnaps = appendUniqueSnaps(current, nextPage.snaps);
+        loadedCountRef.current = Math.max(PAGE_SIZE, nextSnaps.length);
+        return nextSnaps;
+      });
       setHasMore(nextPage.snaps.length === PAGE_SIZE);
       setError(null);
     } catch (nextError) {

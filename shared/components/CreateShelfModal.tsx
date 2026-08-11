@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import type { Shelf } from '@/features/shelves/types';
 import type { Stack } from '@/features/stacks/types';
+import { getOrganizationNameError, ORGANIZATION_NAME_MAX_LENGTH, validateOrganizationName } from '@/features/organizations/name';
 import { FormField } from '@/shared/components/FormField';
 import { PillButton } from '@/shared/components/PillButton';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
@@ -41,15 +42,15 @@ export function CreateShelfModal({ visible, stacks = [], isSubmitting = false, e
   }, [visible]);
 
   async function handleSubmit() {
-    const trimmed = name.trim();
+    const validationError = getOrganizationNameError(name, 'Shelf');
 
-    if (!trimmed) {
-      setLocalError('Shelf name is required.');
+    if (validationError) {
+      setLocalError(validationError);
       return;
     }
 
     setLocalError(null);
-    await onSubmit({ name: trimmed, stackId });
+    await onSubmit({ name: validateOrganizationName(name, 'Shelf'), stackId });
   }
 
   return (
@@ -68,7 +69,7 @@ export function CreateShelfModal({ visible, stacks = [], isSubmitting = false, e
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Shelf</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this collection a name, then decide whether it belongs in a Stack on the Board.</Text>
 
-            <FormField label="Shelf Name" value={name} onChangeText={setName} placeholder="Weekend Stays" autoCapitalize="words" />
+            <FormField label="Shelf Name" value={name} onChangeText={setName} error={localError} placeholder="Weekend Stays" autoCapitalize="words" maxLength={ORGANIZATION_NAME_MAX_LENGTH} />
 
             <View style={{ marginBottom: theme.spacing.md }}>
               <Text style={[textStyles.eyebrow, { marginBottom: 8 }]}>Stack</Text>
@@ -94,7 +95,7 @@ export function CreateShelfModal({ visible, stacks = [], isSubmitting = false, e
               <Text style={[textStyles.bodySm, { marginTop: 8 }]}>{stackId ? `Stack this Shelf under ${stackLabel}.` : 'Keep this Shelf independent for now.'}</Text>
             </View>
 
-            {localError || error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{localError ?? error}</Text> : null}
+            {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
 
             <PillButton
               label={isSubmitting ? 'Creating Shelf...' : 'Create Shelf'}

@@ -2,8 +2,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { createSnap, saveSnapImageLocally } from '@/features/snaps/api';
-import type { SnapSource } from '@/features/snaps/types';
+import { importSnapImages, MAX_SNAP_IMPORT_COUNT, type SnapImportProgress } from '@/features/snaps/api';
+import type { Snap, SnapSource } from '@/features/snaps/types';
 import { parseSnapLabels } from '@/features/snaps/utils';
 import type { Shelf } from '@/features/shelves/types';
 import { FormField } from '@/shared/components/FormField';
@@ -22,7 +22,13 @@ type CreateSnapModalProps = {
   submitLabel?: string;
   source?: SnapSource;
   onClose: () => void;
-  onCreated?: () => void;
+  onCreated?: (snap: Snap) => void;
+  onSaved?: (snaps: Snap[]) => void;
+};
+
+type SelectedImage = {
+  fileName: string | null;
+  uri: string;
 };
 
 const sourceCopy: Record<SnapSource, { description: string; imagePrompt: string; thoughtPlaceholder: string; labelsPlaceholder: string }> = {
@@ -65,7 +71,11 @@ const sourceCopy: Record<SnapSource, { description: string; imagePrompt: string;
 };
 
 function getImageErrorMessage(source: SnapSource) {
-  return source === 'manual' ? 'Choose an image before adding this Snap to the Shelf.' : 'Choose an image before saving this Snap.';
+  return source === 'manual' ? 'Choose at least one image before adding Snaps to the Shelf.' : 'Choose at least one image before saving.';
+}
+
+function getImageTitle(fileName: string | null) {
+  return fileName?.replace(/\.[a-zA-Z0-9]+$/, '').trim().slice(0, 200) || null;
 }
 
 export function CreateSnapModal({
@@ -79,15 +89,18 @@ export function CreateSnapModal({
   source = 'camera-roll',
   onClose,
   onCreated,
+  onSaved,
 }: CreateSnapModalProps) {
   const [title, setTitle] = useState('');
   const [thought, setThought] = useState('');
   const [labels, setLabels] = useState('');
   const [selectedShelfId, setSelectedShelfId] = useState<string | null>(defaultShelfId);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<SnapImportProgress | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -95,8 +108,10 @@ export function CreateSnapModal({
       setThought('');
       setLabels('');
       setSelectedShelfId(defaultShelfId);
-      setImageUri(null);
+      setSelectedImages([]);
       setError(null);
+      setProgress(null);
+      setSavedCount(0);
       setIsSubmitting(false);
       setIsPicking(false);
     }
@@ -126,13 +141,26 @@ export function CreateSnapModal({
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 1,
-        allowsEditing: true,
+        allowsMultipleSelection: true,
+        orderedSelection: true,
+        selectionLimit: MAX_SNAP_IMPORT_COUNT,
       });
 
-      if (!result.canceled && result.assets[0]?.uri) {
-        setImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets.length > 0) {
+        if (result.assets.length > MAX_SNAP_IMPORT_COUNT) {
+          setSelectedImages([]);
+          setError(`Choose no more than ${MAX_SNAP_IMPORT_COUNT} photos at a time.`);
+          return;
+        }
+
+        setSelectedImages(
+          result.assets.map((asset) => ({
+            fileName: asset.fileName ?? null,
+            uri: asset.uri,
+          })),
+        );
       } else if (!result.canceled) {
-        setError('SnapShelf could not read that image. Try choosing it again.');
+        setError('SnapShelf could not read those images. Try choosing them again.');
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to open the photo library.');
@@ -147,7 +175,7 @@ export function CreateSnapModal({
       return;
     }
 
-    if (!imageUri) {
+    if (selectedImages.length === 0) {
       setError(getImageErrorMessage(source));
       return;
     }
@@ -155,25 +183,31 @@ export function CreateSnapModal({
     try {
       setIsSubmitting(true);
       setError(null);
+      setProgress({ completed: 0, phase: 'copying', total: selectedImages.length });
 
-      const localPath = await saveSnapImageLocally(imageUri);
-      await createSnap(userId, {
+      const createdSnaps = await importSnapImages(userId, selectedImages.map((image) => ({
+        title: selectedImages.length === 1 ? title.trim() || getImageTitle(image.fileName) : getImageTitle(image.fileName),
+        uri: image.uri,
+      })), {
         shelfId: selectedShelfId,
-        title: title.trim() || null,
         thought: thought.trim() || null,
         labels: parseSnapLabels(labels),
         source,
         capturedAt: new Date(),
-        imageUrl: null,
-        localPath,
-      });
+      }, setProgress);
 
-      onCreated?.();
-      onClose();
+      onSaved?.(createdSnaps);
+      if (createdSnaps.length === 1) {
+        onCreated?.(createdSnaps[0]);
+        onClose();
+      } else {
+        setSavedCount(createdSnaps.length);
+      }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to save this Snap right now.');
+      setError(nextError instanceof Error ? nextError.message : 'Unable to save these Snaps right now.');
     } finally {
       setIsSubmitting(false);
+      setProgress(null);
     }
   }
 
@@ -181,10 +215,25 @@ export function CreateSnapModal({
     return null;
   }
 
+  if (savedCount > 1) {
+    return (
+      <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(46, 35, 26, 0.24)', justifyContent: 'center', paddingHorizontal: theme.spacing.lg }}>
+          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Import Complete</Text>
+            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.sm }]}>{savedCount} Snaps saved</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Your photos are stored on this device and their shared context is ready in {destinationLabel}.</Text>
+            <PillButton label="Continue" icon="arrow-right" fullWidth onPress={onClose} testID="create-snap-batch-continue-button" />
+          </SurfaceCard>
+        </View>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={isSubmitting || isPicking ? () => undefined : onClose}>
       <Pressable
-        onPress={onClose}
+        onPress={isSubmitting || isPicking ? undefined : onClose}
         style={{
           flex: 1,
           backgroundColor: 'rgba(46, 35, 26, 0.24)',
@@ -206,27 +255,42 @@ export function CreateSnapModal({
                 borderRadius: theme.radii.lg,
                 borderWidth: 1,
                 borderColor: theme.colors.borderSoft,
-                height: 180,
+                minHeight: selectedImages.length > 0 ? 52 : 180,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: theme.spacing.md,
                 overflow: 'hidden',
               }}
             >
-              {imageUri ? (
-                <Image
-                  source={{ uri: imageUri }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                  onError={() => setError('SnapShelf cannot preview that image. Try choosing it again.')}
-                />
-              ) : (
-                <Text style={textStyles.bodyMd}>{isPicking ? 'Opening library...' : copy.imagePrompt}</Text>
-              )}
+              <Text style={textStyles.bodyMd}>{isPicking ? 'Opening library...' : selectedImages.length > 0 ? 'Choose Different Photos' : `${copy.imagePrompt} (up to ${MAX_SNAP_IMPORT_COUNT})`}</Text>
             </Pressable>
 
-            <FormField label="Title" value={title} onChangeText={setTitle} testID="create-snap-title-input" placeholder="Scandinavian living room inspiration" returnKeyType="next" />
-            <FormField label="Thought" value={thought} onChangeText={setThought} testID="create-snap-thought-input" placeholder={copy.thoughtPlaceholder} multiline style={{ minHeight: 96, textAlignVertical: 'top' }} />
+            {selectedImages.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.spacing.sm, paddingRight: theme.spacing.md, marginBottom: theme.spacing.md }}>
+                {selectedImages.map((image, index) => (
+                  <View key={`${image.uri}-${index}`} style={{ width: 104 }}>
+                    <Image source={{ uri: image.uri }} style={{ width: 104, height: 104, borderRadius: theme.radii.md }} resizeMode="cover" onError={() => setError('SnapShelf cannot preview one of these images. Remove it and choose it again.')} />
+                    <Pressable
+                      onPress={() => setSelectedImages((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove photo ${index + 1}`}
+                      disabled={isSubmitting}
+                      style={{ position: 'absolute', right: 6, top: 6, width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Text style={[textStyles.titleMd, { color: theme.colors.primary }]}>X</Text>
+                    </Pressable>
+                    <Text numberOfLines={1} style={[textStyles.bodySm, { marginTop: 4, textAlign: 'center' }]}>{index + 1} of {selectedImages.length}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+
+            {selectedImages.length <= 1 ? (
+              <FormField label="Title" value={title} onChangeText={setTitle} testID="create-snap-title-input" placeholder="Scandinavian living room inspiration" returnKeyType="next" maxLength={200} />
+            ) : (
+              <Text style={[textStyles.bodySm, { color: theme.colors.textMuted, marginBottom: theme.spacing.md }]}>Each Snap will use its photo filename as its title. Thought, labels, and destination apply to all {selectedImages.length} Snaps.</Text>
+            )}
+            <FormField label="Thought" value={thought} onChangeText={setThought} testID="create-snap-thought-input" placeholder={copy.thoughtPlaceholder} multiline maxLength={10000} style={{ minHeight: 96, textAlignVertical: 'top' }} />
             <FormField label="Labels" value={labels} onChangeText={setLabels} testID="create-snap-labels-input" placeholder={copy.labelsPlaceholder} autoCapitalize="none" />
             <Text style={[textStyles.bodySm, { color: theme.colors.textMuted, marginTop: -theme.spacing.sm, marginBottom: theme.spacing.md }]}>Separate labels with commas. A few plain words work best.</Text>
 
@@ -263,9 +327,10 @@ export function CreateSnapModal({
               </View>
             )}
 
-            {error ? <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
+            {progress ? <Text accessibilityLiveRegion="polite" style={[textStyles.bodySm, { marginBottom: theme.spacing.md }]}>{progress.phase === 'copying' ? `Preparing photo ${progress.completed} of ${progress.total}...` : `Saving ${progress.total} Snaps together...`}</Text> : null}
+            {error ? <Text accessibilityLiveRegion="assertive" style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.md }]}>{error}</Text> : null}
 
-            <PillButton label={isSubmitting ? 'Saving Snap...' : submitLabel} icon="image" fullWidth onPress={handleSubmit} disabled={isSubmitting || isPicking} testID="create-snap-save-button" />
+            <PillButton label={isSubmitting ? 'Saving Snaps...' : selectedImages.length > 1 ? `Save ${selectedImages.length} Snaps` : submitLabel} icon="image" fullWidth onPress={handleSubmit} disabled={isSubmitting || isPicking} testID="create-snap-save-button" />
 
             <View style={{ marginTop: theme.spacing.sm }}>
               <PillButton label="Cancel" variant="secondary" fullWidth onPress={onClose} disabled={isSubmitting} />

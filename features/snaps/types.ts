@@ -5,6 +5,7 @@ export type Snap = {
   shelfId: string | null;
   title: string | null;
   imageUrl: string | null;
+  sourceUrl: string | null;
   localPath: string | null;
   thought: string | null;
   labels: string[];
@@ -22,6 +23,7 @@ export type CreateSnapInput = {
   shelfId?: string | null;
   title?: string | null;
   imageUrl?: string | null;
+  sourceUrl?: string | null;
   localPath?: string | null;
   thought?: string | null;
   labels?: string[];

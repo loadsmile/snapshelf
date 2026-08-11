@@ -9,6 +9,7 @@ function buildSnap(overrides: Partial<Snap>): Snap {
     shelfId: overrides.shelfId ?? null,
     title: overrides.title ?? null,
     imageUrl: overrides.imageUrl ?? null,
+    sourceUrl: overrides.sourceUrl ?? null,
     localPath: overrides.localPath ?? null,
     thought: overrides.thought ?? null,
     labels: overrides.labels ?? [],
@@ -42,6 +43,7 @@ describe('searchSnaps', () => {
       title: 'Reading Nook',
       thought: 'Layered lamp light for evening reading',
       labels: ['home', 'cozy'],
+      sourceUrl: 'https://example.com/reading-nook',
     }),
   ];
 
@@ -65,5 +67,9 @@ describe('searchSnaps', () => {
     const results = searchSnaps(snaps, 'blue walnut');
 
     expect(results).toEqual([]);
+  });
+
+  it('matches the original source domain', () => {
+    expect(searchSnaps(snaps, 'example.com').map((snap) => snap.id)).toEqual(['reading-nook']);
   });
 });

@@ -37,6 +37,7 @@ export async function seedSampleData(userId: string): Promise<SeedSampleResult> 
       thought: 'Maybe save this for the Saturday hosting board.',
       labels: ['Food', 'Brunch'],
       source: 'web-clip' as const,
+      sourceUrl: 'https://example.com/avocado-toast',
       capturedAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
     },
     {
@@ -69,6 +70,7 @@ export async function seedSampleData(userId: string): Promise<SeedSampleResult> 
       thought: 'This is the mood for future travel shelves.',
       labels: ['Travel'],
       source: 'web-clip' as const,
+      sourceUrl: 'https://example.com/coastal-hotel',
       capturedAt: new Date(Date.now() - 1000 * 60 * 60 * 72),
     },
     {

@@ -4,7 +4,6 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BoardIcon } from '@/shared/components/icons/BoardIcon';
-import { TrayIcon } from '@/shared/components/icons/TrayIcon';
 import { theme, useThemeMode } from '@/shared/theme';
 
 function renderIcon(routeName: string, color: string, focused: boolean) {
@@ -17,7 +16,7 @@ function renderIcon(routeName: string, color: string, focused: boolean) {
   }
 
   if (routeName === 'tray') {
-    return <TrayIcon color={color} focused={focused} />;
+    return <Feather name="inbox" size={24} color={color} />;
   }
 
   return <Feather name="settings" size={24} color={color} />;

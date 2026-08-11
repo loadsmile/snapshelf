@@ -17,16 +17,19 @@ type SnapArtworkProps = {
   children?: ReactNode;
   showChildrenOnFallback?: boolean;
   fallbackLabel?: string;
+  onImageError?: () => void;
 };
 
-export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false, fallbackLabel = 'Image unavailable' }: SnapArtworkProps) {
-  const resolvedImageUri = useMemo(() => imageUri ?? (snap ? resolveSnapImageUri(snap) : null), [imageUri, snap]);
+export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false, fallbackLabel = 'Image unavailable', onImageError }: SnapArtworkProps) {
+  const initialImageUri = useMemo(() => imageUri ?? (snap ? resolveSnapImageUri(snap) : null), [imageUri, snap]);
+  const [resolvedImageUri, setResolvedImageUri] = useState(initialImageUri);
   const [isBroken, setIsBroken] = useState(false);
   const shouldShowFallback = !resolvedImageUri || isBroken;
 
   useEffect(() => {
+    setResolvedImageUri(initialImageUri);
     setIsBroken(false);
-  }, [resolvedImageUri]);
+  }, [initialImageUri]);
 
   return (
     <View style={[style, { overflow: 'hidden' }]}>
@@ -40,7 +43,20 @@ export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, styl
         </View>
       ) : (
         <>
-          <Image source={{ uri: resolvedImageUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" onError={() => setIsBroken(true)} />
+          <Image
+            source={{ uri: resolvedImageUri }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => {
+              if (snap?.imageUrl && resolvedImageUri !== snap.imageUrl) {
+                setResolvedImageUri(snap.imageUrl);
+                return;
+              }
+
+              setIsBroken(true);
+              onImageError?.();
+            }}
+          />
           <LinearGradient colors={fallbackColors} style={[StyleSheet.absoluteFillObject, styles.overlay]} />
         </>
       )}

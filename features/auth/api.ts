@@ -1,192 +1,380 @@
-import type { User as FirebaseUser } from 'firebase/auth';
-import {
-  EmailAuthProvider,
-  createUserWithEmailAndPassword,
-  deleteUser,
-  onAuthStateChanged,
-  reauthenticateWithCredential,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updateProfile,
-} from 'firebase/auth';
-import { FirebaseError } from 'firebase/app';
-import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import type { EmailOtpType, SupabaseClient, User as SupabaseUser } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 
-import type { AuthUser, UserProfile } from '@/features/auth/types';
-import { listAllSnaps } from '@/features/snaps/api';
-import { deleteSnapImageLocally } from '@/features/snaps/utils';
-import { createDefaultShelf } from '@/features/shelves/api';
-import { requireAuth, requireDb } from '@/services/firebase';
+import type { AuthUser, SignUpResult, UserProfile } from '@/features/auth/types';
+import { deleteImageLocally } from '@/features/images/local';
+import { listCurrentDeviceMediaPaths } from '@/features/images/locations';
+import { requireSupabaseClient } from '@/services/supabase';
+
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
 
 function toDate(value: unknown) {
-  return value instanceof Timestamp ? value.toDate() : null;
+  return typeof value === 'string' ? new Date(value) : null;
 }
 
-export function mapAuthUser(user: FirebaseUser): AuthUser {
+function getDisplayName(user: SupabaseUser) {
+  const displayName = user.user_metadata?.display_name;
+  return typeof displayName === 'string' ? displayName : null;
+}
+
+export function mapAuthUser(user: SupabaseUser): AuthUser {
   return {
-    id: user.uid,
-    email: user.email,
-    displayName: user.displayName,
+    id: user.id,
+    email: user.email ?? null,
+    displayName: getDisplayName(user),
   };
 }
 
-function mapUserProfile(userId: string, data: Record<string, unknown>): UserProfile {
+function mapUserProfile(row: ProfileRow): UserProfile {
   return {
-    id: userId,
-    email: typeof data.email === 'string' ? data.email : null,
-    displayName: typeof data.displayName === 'string' ? data.displayName : null,
-    createdAt: toDate(data.createdAt),
-    updatedAt: toDate(data.updatedAt),
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
   };
 }
 
-export async function ensureUserProfile(user: FirebaseUser): Promise<UserProfile> {
-  const db = requireDb();
-  const userRef = doc(db, 'users', user.uid);
-  const snapshot = await getDoc(userRef);
+function isMissingProfileError(error: { code?: string; message?: string } | null) {
+  return error?.code === 'PGRST116' || error?.message?.toLowerCase().includes('no rows') === true;
+}
 
-  if (!snapshot.exists()) {
-    await setDoc(userRef, {
-      email: user.email ?? null,
-      displayName: user.displayName ?? null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } else {
-    await setDoc(
-      userRef,
-      {
-        email: user.email ?? snapshot.data().email ?? null,
-        displayName: user.displayName ?? (typeof snapshot.data().displayName === 'string' ? snapshot.data().displayName : null),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+async function getCurrentUser() {
+  const client = requireSupabaseClient();
+  const { data, error } = await client.auth.getUser();
+
+  if (error) {
+    throw error;
   }
 
-  const refreshedSnapshot = await getDoc(userRef);
-  return mapUserProfile(user.uid, refreshedSnapshot.data() ?? {});
+  return data.user;
 }
 
-export async function signUp(email: string, password: string): Promise<void> {
-  const credentials = await createUserWithEmailAndPassword(requireAuth(), email, password);
-  await ensureUserProfile(credentials.user);
-  await createDefaultShelf(credentials.user.uid);
+async function collectAccountLocalMediaPaths(client: SupabaseClient, userId: string): Promise<string[]> {
+  return listCurrentDeviceMediaPaths(client, userId, [
+    'snap_media_locations',
+    'shelf_cover_locations',
+    'stack_cover_locations',
+  ]);
+}
+
+async function deleteAccountLocalMedia(localPaths: string[]) {
+  await Promise.allSettled(localPaths.map((localPath) => deleteImageLocally(localPath)));
+}
+
+export async function ensureUserProfile(user: SupabaseUser): Promise<UserProfile> {
+  const client = requireSupabaseClient();
+  const { data: existingProfile, error: readError } = await client
+    .from('profiles')
+    .select('id,email,display_name,created_at,updated_at')
+    .eq('id', user.id)
+    .maybeSingle<ProfileRow>();
+
+  if (readError && !isMissingProfileError(readError)) {
+    throw readError;
+  }
+
+  const profilePatch = {
+    id: user.id,
+    email: user.email ?? existingProfile?.email ?? null,
+    display_name: existingProfile?.display_name ?? getDisplayName(user),
+    updated_at: new Date().toISOString(),
+  };
+
+  const query = existingProfile
+    ? client.from('profiles').update(profilePatch).eq('id', user.id)
+    : client.from('profiles').insert(profilePatch);
+  const { data: syncedProfile, error: syncError } = await query
+    .select('id,email,display_name,created_at,updated_at')
+    .single<ProfileRow>();
+
+  if (syncError) {
+    throw syncError;
+  }
+
+  return mapUserProfile(syncedProfile);
+}
+
+export async function signUp(email: string, password: string): Promise<SignUpResult> {
+  const client = requireSupabaseClient();
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: Linking.createURL('/auth-callback'),
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (data.session && data.user) {
+    await ensureUserProfile(data.user);
+  }
+
+  return {
+    requiresEmailConfirmation: !data.session,
+  };
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(requireAuth(), email, password);
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function signOutUser(): Promise<void> {
-  await firebaseSignOut(requireAuth());
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.signOut();
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function updateUserDisplayName(displayName: string): Promise<void> {
-  const auth = requireAuth();
-  const db = requireDb();
-  const currentUser = auth.currentUser;
+  const client = requireSupabaseClient();
+  const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     throw new Error('Sign in again before updating your profile.');
   }
 
   const trimmedDisplayName = displayName.trim();
-  await updateProfile(currentUser, {
-    displayName: trimmedDisplayName || null,
+
+  if (trimmedDisplayName.length > 80) {
+    throw new Error('Display name must be 80 characters or fewer.');
+  }
+
+  const nextDisplayName = trimmedDisplayName || null;
+  const { error: metadataError } = await client.auth.updateUser({
+    data: {
+      display_name: nextDisplayName,
+    },
   });
 
-  await setDoc(
-    doc(db, 'users', currentUser.uid),
-    {
+  if (metadataError) {
+    throw metadataError;
+  }
+
+  const { error: profileError } = await client
+    .from('profiles')
+    .update({
       email: currentUser.email ?? null,
-      displayName: trimmedDisplayName || null,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+      display_name: nextDisplayName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', currentUser.id);
+
+  if (profileError) {
+    throw profileError;
+  }
 }
 
 export async function sendPasswordReset(): Promise<void> {
-  const auth = requireAuth();
-  const currentUser = auth.currentUser;
+  const currentUser = await getCurrentUser();
 
   if (!currentUser?.email) {
     throw new Error('This account does not have an email address for password reset.');
   }
 
-  await sendPasswordResetEmail(auth, currentUser.email);
+  await requestPasswordReset(currentUser.email);
 }
 
-async function deleteCollectionDocs(pathSegments: [string, string, string]) {
-  const db = requireDb();
-  const snapshot = await getDocs(collection(db, ...pathSegments));
+export async function requestPasswordReset(email: string): Promise<void> {
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.resetPasswordForEmail(email, {
+    redirectTo: Linking.createURL('/reset-password'),
+  });
 
-  if (snapshot.empty) {
-    return;
+  if (error) {
+    throw error;
+  }
+}
+
+function getAuthRedirectParams(url: string) {
+  const queryStart = url.indexOf('?');
+  const hashStart = url.indexOf('#');
+  const queryEnd = hashStart >= 0 ? hashStart : url.length;
+  const query = queryStart >= 0 ? url.slice(queryStart + 1, queryEnd) : '';
+  const hash = hashStart >= 0 ? url.slice(hashStart + 1) : '';
+  const params = new URLSearchParams(query);
+
+  new URLSearchParams(hash).forEach((value, key) => {
+    params.set(key, value);
+  });
+
+  return params;
+}
+
+export async function completeAuthRedirect(
+  url: string,
+  expectedType?: 'confirmed' | 'recovery',
+): Promise<'confirmed' | 'recovery'> {
+  const client = requireSupabaseClient();
+  const params = getAuthRedirectParams(url);
+  const errorDescription = params.get('error_description') ?? params.get('error');
+
+  if (errorDescription) {
+    throw new Error(errorDescription.replace(/\+/g, ' '));
   }
 
-  for (let index = 0; index < snapshot.docs.length; index += 400) {
-    const batch = writeBatch(db);
-    snapshot.docs.slice(index, index + 400).forEach((entry) => {
-      batch.delete(entry.ref);
+  const type = params.get('type');
+  const code = params.get('code');
+  const tokenHash = params.get('token_hash');
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+
+  if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      throw error;
+    }
+  } else if (tokenHash && type) {
+    const { error } = await client.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: type as EmailOtpType,
     });
-    await batch.commit();
+
+    if (error) {
+      throw error;
+    }
+  } else if (accessToken && refreshToken) {
+    const { error } = await client.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      throw error;
+    }
+  } else {
+    throw new Error('This sign-in link is incomplete or has expired. Request a new email and try again.');
   }
+
+  return type === 'recovery' || expectedType === 'recovery' ? 'recovery' : 'confirmed';
 }
 
-async function deleteUserData(userId: string) {
-  const db = requireDb();
-  const snaps = await listAllSnaps(userId);
+export async function updatePassword(password: string): Promise<void> {
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.updateUser({ password });
 
-  await Promise.all(snaps.map((snap) => deleteSnapImageLocally(snap.localPath)));
-  await deleteCollectionDocs(['users', userId, 'threads']);
-  await deleteCollectionDocs(['users', userId, 'snaps']);
-  await deleteCollectionDocs(['users', userId, 'shelves']);
-  await deleteDoc(doc(db, 'users', userId));
+  if (error) {
+    throw error;
+  }
 }
 
 export async function deleteCurrentUserAccount(password: string): Promise<void> {
-  const auth = requireAuth();
-  const currentUser = auth.currentUser;
+  const client = requireSupabaseClient();
+  const currentUser = await getCurrentUser();
 
   if (!currentUser?.email) {
     throw new Error('Sign in again before deleting this account.');
   }
 
-  const trimmedPassword = password.trim();
-  if (!trimmedPassword) {
+  if (!password) {
     throw new Error('Enter your current password to delete this account.');
   }
 
-  const credential = EmailAuthProvider.credential(currentUser.email, trimmedPassword);
-  await reauthenticateWithCredential(currentUser, credential);
-  await deleteUserData(currentUser.uid);
-  await deleteUser(currentUser);
+  const { error: verificationError } = await client.auth.signInWithPassword({
+    email: currentUser.email,
+    password,
+  });
+
+  if (verificationError) {
+    throw verificationError;
+  }
+
+  const localMediaPaths = await collectAccountLocalMediaPaths(client, currentUser.id);
+
+  const { data, error } = await client.functions.invoke('delete-account', {
+    body: { password },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data || data.ok !== true) {
+    throw new Error('SnapShelf could not confirm that account deletion completed.');
+  }
+
+  try {
+    await deleteAccountLocalMedia(localMediaPaths);
+  } finally {
+    await client.auth.signOut({ scope: 'local' });
+  }
 }
 
-export function subscribeToAuth(listener: (user: FirebaseUser | null) => void) {
-  return onAuthStateChanged(requireAuth(), listener);
+export function subscribeToAuth(listener: (user: SupabaseUser | null) => void) {
+  const client = requireSupabaseClient();
+  let isSubscribed = true;
+
+  client.auth.getSession().then(({ data }) => {
+    if (isSubscribed) {
+      listener(data.session?.user ?? null);
+    }
+  });
+
+  const { data } = client.auth.onAuthStateChange((_event, session) => {
+    listener(session?.user ?? null);
+  });
+
+  return () => {
+    isSubscribed = false;
+    data.subscription.unsubscribe();
+  };
 }
 
 export function getAuthErrorMessage(error: unknown): string {
-  if (error instanceof FirebaseError) {
-    const messages: Record<string, string> = {
-      'auth/email-already-in-use': 'That email is already in use.',
-      'auth/invalid-email': 'Enter a valid email address.',
-      'auth/invalid-credential': 'That email/password combination was not recognized.',
-      'auth/missing-password': 'Enter your password to continue.',
-      'auth/requires-recent-login': 'Please sign in again, then retry this action.',
-      'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
-      'auth/user-not-found': 'No SnapShelf account was found for that email.',
-      'auth/wrong-password': 'That password was not recognized.',
-      'auth/weak-password': 'Choose a stronger password with at least 6 characters.',
-      'auth/network-request-failed': 'Network error. Check your connection and try again.',
-      'permission-denied': 'Your Firebase rules blocked this request. Check Firestore/Auth setup.',
-    };
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: unknown }).message ?? '');
+    const code = 'code' in error ? String((error as { code?: unknown }).code ?? '') : '';
+    const lowerMessage = message.toLowerCase();
 
-    return messages[error.code] ?? error.message;
+    if (code === 'email_exists' || lowerMessage.includes('already registered')) {
+      return 'That email is already in use.';
+    }
+
+    if (lowerMessage.includes('invalid email')) {
+      return 'Enter a valid email address.';
+    }
+
+    if (lowerMessage.includes('invalid login credentials')) {
+      return 'That email/password combination was not recognized.';
+    }
+
+    if (lowerMessage.includes('password')) {
+      return message;
+    }
+
+    if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+    }
+
+    if (lowerMessage.includes('row-level security') || lowerMessage.includes('permission denied')) {
+      return 'Supabase permissions blocked this request. Check RLS policies for this table.';
+    }
+
+    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('network')) {
+      return 'Network error. Check your connection and try again.';
+    }
+
+    return message || 'Something went wrong. Please try again.';
   }
 
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';

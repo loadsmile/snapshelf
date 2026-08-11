@@ -1,31 +1,58 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, serverTimestamp, Timestamp, where } from 'firebase/firestore';
-
 import type { CreateShelfThreadInput, ShelfThread, ShelfThreadAnchorType } from '@/features/threads/types';
-import { requireDb } from '@/services/firebase';
+import { requireSupabaseClient } from '@/services/supabase';
 
 function toDate(value: unknown) {
-  return value instanceof Timestamp ? value.toDate() : null;
+  return typeof value === 'string' ? new Date(value) : null;
 }
 
-function mapThread(id: string, data: Record<string, unknown>): ShelfThread {
-  const legacyFromShelfId = typeof data.fromShelfId === 'string' ? data.fromShelfId : '';
-  const fromStackId = typeof data.fromStackId === 'string' ? data.fromStackId : null;
-  const fromType: ShelfThreadAnchorType = data.fromType === 'stack' || fromStackId ? 'stack' : 'shelf';
-  const fromId = typeof data.fromId === 'string' ? data.fromId : fromType === 'stack' ? fromStackId ?? '' : legacyFromShelfId;
+type ThreadRow = {
+  id: string;
+  from_type: string | null;
+  from_id: string | null;
+  from_shelf_id: string | null;
+  from_stack_id: string | null;
+  to_shelf_id: string | null;
+  created_at: string | null;
+};
+
+const threadColumns = 'id,from_type,from_id,from_shelf_id,from_stack_id,to_shelf_id,created_at';
+
+type ReplacementThreadInput = {
+  fromType: ShelfThreadAnchorType;
+  fromId: string;
+  fromShelfId: string | null;
+  fromStackId: string | null;
+};
+
+function mapThread(row: ThreadRow): ShelfThread {
+  const fromShelfId = row.from_shelf_id ?? '';
+  const fromStackId = row.from_stack_id;
+  const fromType: ShelfThreadAnchorType = row.from_type === 'stack' || fromStackId ? 'stack' : 'shelf';
+  const fromId = row.from_id ?? (fromType === 'stack' ? fromStackId ?? '' : fromShelfId);
 
   return {
-    id,
+    id: row.id,
     fromType,
     fromId,
-    fromShelfId: legacyFromShelfId,
+    fromShelfId,
     fromStackId,
-    toShelfId: typeof data.toShelfId === 'string' ? data.toShelfId : '',
-    createdAt: toDate(data.createdAt),
+    toShelfId: row.to_shelf_id ?? '',
+    createdAt: toDate(row.created_at),
   };
 }
 
+export async function listThreads(userId: string): Promise<ShelfThread[]> {
+  const client = requireSupabaseClient();
+  const { data, error } = await client.from('threads').select(threadColumns).eq('user_id', userId).order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as ThreadRow[]).map(mapThread).filter((thread) => thread.fromId && thread.toShelfId);
+}
+
 export async function createShelfThread(userId: string, input: CreateShelfThreadInput): Promise<ShelfThread> {
-  const db = requireDb();
   const fromType: ShelfThreadAnchorType = input.fromStackId ? 'stack' : 'shelf';
   const fromId = input.fromStackId ?? input.fromShelfId ?? '';
 
@@ -33,132 +60,148 @@ export async function createShelfThread(userId: string, input: CreateShelfThread
     throw new Error('Thread anchor is required.');
   }
 
-  const created = await addDoc(collection(db, 'users', userId, 'threads'), {
-    fromType,
-    fromId,
-    fromShelfId: input.fromShelfId ?? null,
-    fromStackId: input.fromStackId ?? null,
-    toShelfId: input.toShelfId,
-    createdAt: serverTimestamp(),
-  });
+  const client = requireSupabaseClient();
+  const { data, error } = await client
+    .from('threads')
+    .insert({
+      user_id: userId,
+      from_type: fromType,
+      from_id: fromId,
+      from_shelf_id: input.fromShelfId ?? null,
+      from_stack_id: input.fromStackId ?? null,
+      to_shelf_id: input.toShelfId,
+    })
+    .select(threadColumns)
+    .single<ThreadRow>();
 
-  return {
-    id: created.id,
-    fromType,
-    fromId,
-    fromShelfId: input.fromShelfId ?? '',
-    fromStackId: input.fromStackId ?? null,
-    toShelfId: input.toShelfId,
-    createdAt: null,
-  };
+  if (error) {
+    throw error;
+  }
+
+  return mapThread(data);
 }
 
 export async function deleteShelfThread(userId: string, threadId: string): Promise<void> {
-  const db = requireDb();
-  await deleteDoc(doc(db, 'users', userId, 'threads', threadId));
+  const client = requireSupabaseClient();
+  const { error } = await client.from('threads').delete().eq('user_id', userId).eq('id', threadId);
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function deleteThreadsForShelf(userId: string, shelfId: string): Promise<void> {
-  const db = requireDb();
-  const collectionRef = collection(db, 'users', userId, 'threads');
-  const [incomingThreads, outgoingThreads] = await Promise.all([
-    getDocs(query(collectionRef, where('toShelfId', '==', shelfId))),
-    getDocs(query(collectionRef, where('fromShelfId', '==', shelfId))),
+  const client = requireSupabaseClient();
+  const results = await Promise.all([
+    client.from('threads').delete().eq('user_id', userId).eq('to_shelf_id', shelfId),
+    client.from('threads').delete().eq('user_id', userId).eq('from_shelf_id', shelfId),
+    client.from('threads').delete().eq('user_id', userId).eq('from_type', 'shelf').eq('from_id', shelfId),
   ]);
 
-  const seenThreadIds = new Set<string>();
-  const deletes = [...incomingThreads.docs, ...outgoingThreads.docs].flatMap((thread) => {
-    if (seenThreadIds.has(thread.id)) {
-      return [];
+  for (const { error } of results) {
+    if (error) {
+      throw error;
     }
-
-    seenThreadIds.add(thread.id);
-    return [deleteDoc(thread.ref)];
-  });
-
-  await Promise.all(deletes);
+  }
 }
 
 export async function deleteThreadsForStack(userId: string, stackId: string): Promise<void> {
-  const db = requireDb();
-  const collectionRef = collection(db, 'users', userId, 'threads');
-  const [modernThreads, legacyThreads] = await Promise.all([
-    getDocs(query(collectionRef, where('fromId', '==', stackId))),
-    getDocs(query(collectionRef, where('fromStackId', '==', stackId))),
+  const client = requireSupabaseClient();
+  const results = await Promise.all([
+    client.from('threads').delete().eq('user_id', userId).eq('from_type', 'stack').eq('from_id', stackId),
+    client.from('threads').delete().eq('user_id', userId).eq('from_stack_id', stackId),
   ]);
 
-  const seenThreadIds = new Set<string>();
-  const deletes = [...modernThreads.docs, ...legacyThreads.docs].flatMap((thread) => {
-    if (seenThreadIds.has(thread.id)) {
-      return [];
+  for (const { error } of results) {
+    if (error) {
+      throw error;
     }
+  }
+}
 
-    const data = thread.data();
-    if (data.fromType !== 'stack' && data.fromStackId !== stackId) {
-      return [];
-    }
+async function replaceShelfThread(userId: string, shelfId: string, input: ReplacementThreadInput | null): Promise<void> {
+  const client = requireSupabaseClient();
 
-    seenThreadIds.add(thread.id);
-    return [deleteDoc(thread.ref)];
+  const { error } = await client.rpc('replace_shelf_thread', {
+    destination_shelf_id: shelfId,
+    anchor_type: input?.fromType ?? null,
+    anchor_id: input?.fromId ?? null,
   });
 
-  await Promise.all(deletes);
+  if (error) {
+    throw error;
+  }
 }
 
 export async function setShelfAnchor(userId: string, shelfId: string, anchorShelfId: string | null): Promise<void> {
-  const db = requireDb();
-  const existingThreads = await getDocs(query(collection(db, 'users', userId, 'threads'), where('toShelfId', '==', shelfId)));
-
-  await Promise.all(existingThreads.docs.map((thread) => deleteDoc(thread.ref)));
-
   if (!anchorShelfId) {
+    await replaceShelfThread(userId, shelfId, null);
     return;
   }
 
-  await addDoc(collection(db, 'users', userId, 'threads'), {
+  await replaceShelfThread(userId, shelfId, {
     fromType: 'shelf',
     fromId: anchorShelfId,
     fromShelfId: anchorShelfId,
     fromStackId: null,
-    toShelfId: shelfId,
-    createdAt: serverTimestamp(),
   });
 }
 
 export async function setShelfStack(userId: string, shelfId: string, stackId: string | null): Promise<void> {
-  const db = requireDb();
-  const existingThreads = await getDocs(query(collection(db, 'users', userId, 'threads'), where('toShelfId', '==', shelfId)));
-
-  await Promise.all(existingThreads.docs.map((thread) => deleteDoc(thread.ref)));
-
   if (!stackId) {
+    await replaceShelfThread(userId, shelfId, null);
     return;
   }
 
-  await addDoc(collection(db, 'users', userId, 'threads'), {
+  await replaceShelfThread(userId, shelfId, {
     fromType: 'stack',
     fromId: stackId,
     fromShelfId: null,
     fromStackId: stackId,
-    toShelfId: shelfId,
-    createdAt: serverTimestamp(),
   });
 }
 
 export function subscribeToThreads(userId: string, callback: (threads: ShelfThread[]) => void, onError?: (error: Error) => void) {
-  const db = requireDb();
+  const client = requireSupabaseClient();
+  let isSubscribed = true;
 
-  return onSnapshot(
-    collection(db, 'users', userId, 'threads'),
-    (snapshot) => {
-      const threads = snapshot.docs
-        .map((entry) => mapThread(entry.id, entry.data()))
-        .filter((thread) => thread.fromId && thread.toShelfId);
+  const refetchThreads = async () => {
+    try {
+      const threads = await listThreads(userId);
+      if (isSubscribed) {
+        callback(threads);
+      }
+    } catch (error) {
+      if (isSubscribed) {
+        onError?.(error instanceof Error ? error : new Error('Unable to load threads.'));
+      }
+    }
+  };
 
-      callback(threads);
-    },
-    (error) => {
-      onError?.(error);
-    },
-  );
+  void refetchThreads();
+
+  const channel = client
+    .channel(`threads:${userId}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'threads',
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        void refetchThreads();
+      },
+    )
+    .subscribe((status, error) => {
+      if (status === 'CHANNEL_ERROR' && error) {
+        onError?.(error instanceof Error ? error : new Error('Thread realtime subscription failed.'));
+      }
+    });
+
+  return () => {
+    isSubscribed = false;
+    void client.removeChannel(channel);
+  };
 }

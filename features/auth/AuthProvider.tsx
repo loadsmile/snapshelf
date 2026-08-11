@@ -12,24 +12,23 @@ import {
   updateUserDisplayName,
 } from '@/features/auth/api';
 import type { AuthContextValue, AuthStatus, AuthUser, UserProfile } from '@/features/auth/types';
-import { requireAuth } from '@/services/firebase';
-import { firebaseConfigError, isFirebaseConfigured } from '@/services/firebase';
+import { requireSupabaseClient, supabaseConfigError, isSupabaseConfigured } from '@/services/supabase';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>(isFirebaseConfigured ? 'loading' : 'signedOut');
+  const [status, setStatus] = useState<AuthStatus>(isSupabaseConfigured ? 'loading' : 'signedOut');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       setStatus('signedOut');
       return;
     }
 
-    const unsubscribe = subscribeToAuth(async (firebaseUser) => {
-      if (!firebaseUser) {
+    const unsubscribe = subscribeToAuth(async (supabaseUser) => {
+      if (!supabaseUser) {
         setUser(null);
         setProfile(null);
         setStatus('signedOut');
@@ -37,10 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setStatus('loading');
-      setUser(mapAuthUser(firebaseUser));
+      setUser(mapAuthUser(supabaseUser));
 
       try {
-        const nextProfile = await ensureUserProfile(firebaseUser);
+        const nextProfile = await ensureUserProfile(supabaseUser);
         setProfile(nextProfile);
       } catch {
         setProfile(null);
@@ -53,14 +52,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function syncCurrentUserProfile() {
-    const currentUser = requireAuth().currentUser;
+    const { data, error } = await requireSupabaseClient().auth.getUser();
 
-    if (!currentUser) {
+    if (error || !data.user) {
       return;
     }
 
-    setUser(mapAuthUser(currentUser));
-    const nextProfile = await ensureUserProfile(currentUser);
+    setUser(mapAuthUser(data.user));
+    const nextProfile = await ensureUserProfile(data.user);
     setProfile(nextProfile);
   }
 
@@ -68,8 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status,
     user,
     profile,
-    isConfigured: isFirebaseConfigured,
-    configError: firebaseConfigError,
+    isConfigured: isSupabaseConfigured,
+    configError: supabaseConfigError,
     signIn: signInUser,
     signUp: signUpUser,
     signOut: signOutUser,

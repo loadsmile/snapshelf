@@ -30,3 +30,49 @@ index 0153c89..80e4476 100644
              handleShareIntent(it)
          }
  
+diff --git a/node_modules/expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift b/node_modules/expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift
+index 0911a9e..99659a5 100644
+--- a/node_modules/expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift
++++ b/node_modules/expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift
+@@ -14,6 +14,8 @@ class ShareViewController: UIViewController {
+   let shareProtocol = "<SCHEME>"
+   let sharedKey = "<SCHEME>ShareKey"
+   var sharedMedia: [SharedMediaFile] = []
++  var expectedImageCount = 0
++  var processedImageCount = 0
+   var sharedWebUrl: [WebUrl] = []
+   var sharedText: [String] = []
+   let imageContentType: String = UTType.image.identifier
+@@ -40,6 +42,23 @@ class ShareViewController: UIViewController {
+         dismissWithError(message: "No content found")
+         return
+       }
++
++      let imageAttachments = extensionContext.inputItems
++        .compactMap { $0 as? NSExtensionItem }
++        .flatMap { content in
++          (content.attachments ?? [])
++            .filter { $0.hasItemConformingToTypeIdentifier(imageContentType) }
++            .map { (content, $0) }
++        }
++
++      if !imageAttachments.isEmpty {
++        expectedImageCount = imageAttachments.count
++        for (index, imageAttachment) in imageAttachments.enumerated() {
++          await handleImages(content: imageAttachment.0, attachment: imageAttachment.1, index: index)
++        }
++        return
++      }
++
+       for (index, attachment) in (attachments).enumerated() {
+         if attachment.hasItemConformingToTypeIdentifier(imageContentType) {
+           await handleImages(content: content, attachment: attachment, index: index)
+@@ -302,5 +321,6 @@ class ShareViewController: UIViewController {
+-          // If this is the last item, save imagesData in userDefaults and redirect to host app
+-          if index == (content.attachments?.count)! - 1 {
++          self.processedImageCount += 1
++
++          if self.processedImageCount == self.expectedImageCount {
+             let userDefaults = UserDefaults(suiteName: self.hostAppGroupIdentifier)
+             userDefaults?.set(self.toData(data: self.sharedMedia), forKey: self.sharedKey)
+             userDefaults?.synchronize()

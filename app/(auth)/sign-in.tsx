@@ -46,9 +46,9 @@ export default function SignInScreen() {
 
       {configError ? (
         <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
-          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Firebase Setup Needed</Text>
+          <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Supabase Setup Needed</Text>
           <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>{configError}</Text>
-          <Text style={textStyles.bodySm}>Add your Firebase keys locally, then restart Expo to enable sign-in.</Text>
+          <Text style={textStyles.bodySm}>Add your Supabase public values locally, then restart Expo to enable sign-in.</Text>
         </SurfaceCard>
       ) : null}
 
@@ -84,6 +84,10 @@ export default function SignInScreen() {
           testID="auth-sign-in-button"
           fullWidth
         />
+
+        <Pressable onPress={() => router.push('/forgot-password')} style={{ alignSelf: 'center', marginTop: theme.spacing.md }}>
+          <Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>Forgot password?</Text>
+        </Pressable>
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg }}>
           <Text style={textStyles.bodySm}>Need an account? </Text>

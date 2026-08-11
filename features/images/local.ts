@@ -126,6 +126,6 @@ export async function getLocalImageAvailability(localPath: string | null): Promi
       console.warn('[getLocalImageAvailability] Unable to check local image.', error);
     }
 
-    return 'missing';
+    return 'unavailable';
   }
 }

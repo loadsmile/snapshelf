@@ -58,9 +58,6 @@ function AppProviders() {
         options={{
           debug: __DEV__,
           resetOnBackground: false,
-          onResetShareIntent: () => {
-            routerRef.current?.replace('/board');
-          },
         }}
       >
         <RetainedShareIntentProvider>
@@ -73,14 +70,13 @@ function AppProviders() {
   );
 }
 
-const routerRef: { current: ReturnType<typeof useRouter> | null } = { current: null };
-
 function RootNavigator() {
   const { isConfigured, status } = useAuth();
   const { hasShareIntent, isReady } = useRetainedShareIntentContext();
   const router = useRouter();
   const segments = useSegments();
   const inAuthGroup = segments[0] === '(auth)';
+  const inPasswordRecoveryRoute = segments.join('/') === '(auth)/reset-password';
   const inShareRoute = segments[0] === 'share-intent';
   const [androidShareGateResolved, setAndroidShareGateResolved] = useState(Platform.OS !== 'android');
   const androidRetryTriggeredRef = useRef(false);
@@ -94,13 +90,6 @@ function RootNavigator() {
       androidRetryTimeoutRef.current = [];
     };
   }, []);
-
-  useEffect(() => {
-    routerRef.current = router;
-    return () => {
-      routerRef.current = null;
-    };
-  }, [router]);
 
   useEffect(() => {
     if (!isConfigured || status === 'loading' || !isReady) {
@@ -148,10 +137,10 @@ function RootNavigator() {
       return;
     }
 
-    if (status === 'signedIn' && inAuthGroup) {
+    if (status === 'signedIn' && inAuthGroup && !inPasswordRecoveryRoute) {
       router.replace('/board');
     }
-  }, [androidShareGateResolved, hasShareIntent, inAuthGroup, inShareRoute, isConfigured, isReady, router, status]);
+  }, [androidShareGateResolved, hasShareIntent, inAuthGroup, inPasswordRecoveryRoute, inShareRoute, isConfigured, isReady, router, status]);
 
   const isRedirecting =
     isConfigured &&
@@ -159,7 +148,7 @@ function RootNavigator() {
     androidShareGateResolved &&
     ((status === 'signedOut' && !inAuthGroup) ||
       (status === 'signedIn' && hasShareIntent && !inShareRoute) ||
-      (status === 'signedIn' && inAuthGroup));
+      (status === 'signedIn' && inAuthGroup && !inPasswordRecoveryRoute));
 
   if (status === 'loading' || !isReady || !androidShareGateResolved || isRedirecting) {
     return <LoadingShell message={!isReady || shouldResolveAndroidShareLaunch ? 'Receiving your Quick Snap...' : 'Setting up your Shelf...'} />;
@@ -177,6 +166,7 @@ function RootNavigator() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="share-intent" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="snap/[id]" />
     </Stack>
   );
 }

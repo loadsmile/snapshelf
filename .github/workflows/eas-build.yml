@@ -1,0 +1,40 @@
+name: EAS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+      submit:
+        description: Submit successful builds to the stores
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build
+        if: ${{ !inputs.submit }}
+        run: eas build --platform "${{ inputs.platform }}" --profile production --non-interactive --no-wait
+      - name: Build and submit
+        if: ${{ inputs.submit }}
+        run: eas build --platform "${{ inputs.platform }}" --profile production --auto-submit --non-interactive --no-wait

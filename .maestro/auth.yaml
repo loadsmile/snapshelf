@@ -1,4 +1,4 @@
-appId: com.anonymous.snapshelf
+appId: com.loadsmile.snapshelf
 ---
 - launchApp
 - assertVisible: SnapShelf

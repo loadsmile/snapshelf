@@ -5,7 +5,7 @@ function normalizeSearchValue(value: string) {
 }
 
 function getSnapSearchText(snap: Snap, additionalText?: string | null) {
-  return normalizeSearchValue([snap.title, snap.thought, ...snap.labels, additionalText].filter(Boolean).join(' '));
+  return normalizeSearchValue([snap.title, snap.thought, snap.sourceUrl, ...snap.labels, additionalText].filter(Boolean).join(' '));
 }
 
 export function searchSnaps(snaps: Snap[], query: string, getAdditionalText?: (snap: Snap) => string | null | undefined) {

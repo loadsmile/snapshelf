@@ -40,6 +40,8 @@ function ShelfOptionCard({
         onPress();
       }}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={{
         width: '31%',
         minHeight: 92,
