@@ -34,9 +34,9 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm run release:verify
       - name: Build and wait for artifacts
-        run: eas build --platform "${{ inputs.platform }}" --profile production --non-interactive --wait --json > eas-build.json
+        run: eas build --platform "${{ inputs.platform }}" --profile production --non-interactive --wait --json > "${RUNNER_TEMP}/eas-build.json"
       - name: Record build IDs and artifact checksums
-        run: node scripts/record-eas-builds.mjs eas-build.json release-artifacts
+        run: node scripts/record-eas-builds.mjs "${RUNNER_TEMP}/eas-build.json" release-artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: eas-production-${{ inputs.platform }}-${{ github.sha }}
