@@ -1,0 +1,53 @@
+name: EAS Submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform of the reviewed production build
+        required: true
+        type: choice
+        options:
+          - ios
+          - android
+      build_id:
+        description: Exact EAS build ID that passed artifact and device QA
+        required: true
+        type: string
+      release_commit:
+        description: Full release commit SHA recorded in the approved build manifest
+        required: true
+        type: string
+      archive_sha256:
+        description: SHA-256 from the approved EAS Build artifact manifest
+        required: true
+        type: string
+      qa_approved:
+        description: Confirm device QA passed for this exact build
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  submit:
+    if: inputs.qa_approved && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 16.28.0
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Verify reviewed build provenance
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+          EXPECTED_PLATFORM: ${{ inputs.platform }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+        run: |
+          test "${RELEASE_COMMIT}" = "$(git rev-parse HEAD)"
+          eas build:view "${BUILD_ID}" --json > reviewed-build.json
+          node scripts/verify-eas-submit.mjs reviewed-build.json "${EXPECTED_PLATFORM}" "${RELEASE_COMMIT}" "${ARCHIVE_SHA256}"
+      - name: Submit reviewed build
+        run: eas submit --platform "${{ inputs.platform }}" --id "${{ inputs.build_id }}" --profile production --non-interactive --wait

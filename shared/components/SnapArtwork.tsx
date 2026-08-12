@@ -20,11 +20,12 @@ type SnapArtworkProps = {
   onImageError?: () => void;
 };
 
-export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false, fallbackLabel = 'Image unavailable', onImageError }: SnapArtworkProps) {
+export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, style, children, showChildrenOnFallback = false, fallbackLabel, onImageError }: SnapArtworkProps) {
   const initialImageUri = useMemo(() => imageUri ?? (snap ? resolveSnapImageUri(snap) : null), [imageUri, snap]);
   const [resolvedImageUri, setResolvedImageUri] = useState(initialImageUri);
   const [isBroken, setIsBroken] = useState(false);
   const shouldShowFallback = !resolvedImageUri || isBroken;
+  const resolvedFallbackLabel = fallbackLabel ?? (snap?.localPath ? 'Image missing from this device' : 'Image unavailable');
 
   useEffect(() => {
     setResolvedImageUri(initialImageUri);
@@ -39,7 +40,7 @@ export function SnapArtwork({ snap = null, imageUri = null, fallbackColors, styl
           <View style={[styles.placeholderBadge, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderSoft }]}>
             <Feather name="camera" size={16} color={theme.colors.textMuted} />
           </View>
-          <Text style={[textStyles.bodySm, styles.placeholderLabel]}>{fallbackLabel}</Text>
+          <Text style={[textStyles.bodySm, styles.placeholderLabel]}>{resolvedFallbackLabel}</Text>
         </View>
       ) : (
         <>

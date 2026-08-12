@@ -213,7 +213,7 @@ export function subscribeToStacks(userId: string, callback: (stacks: Stack[]) =>
       },
     )
     .subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' && error) {
+      if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
         onError?.(error instanceof Error ? error : new Error('Stack realtime subscription failed.'));
       }
     });

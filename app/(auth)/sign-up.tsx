@@ -73,7 +73,7 @@ export default function SignUpScreen() {
         {confirmationEmail ? (
           <>
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Check Your Email</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>We sent a confirmation link to {confirmationEmail}. Open it on this device to finish creating your account.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.md }]}>We sent a confirmation link to {confirmationEmail}. Open it on this device to return to SnapShelf automatically. If you open it on another device, return here after confirming and sign in.</Text>
             <PillButton label="Back to Sign In" onPress={() => router.replace('/sign-in')} fullWidth />
           </>
         ) : (

@@ -45,7 +45,7 @@ import { textStyles } from '@/shared/theme/typography';
 
 const CANVAS_WIDTH = 980;
 const CANVAS_HEIGHT = 1360;
-const ABSOLUTE_MIN_SCALE = 0.45;
+const ABSOLUTE_MIN_SCALE = 0.3;
 const MAX_SCALE = 1.9;
 const BOARD_TOP_GUTTER = 28;
 const BOARD_SIDE_GUTTER = 22;
@@ -156,24 +156,24 @@ function getContentBounds(shelves: Array<ReturnType<typeof getResolvedShelf>>, s
   };
 }
 
-function clampTransform(transform: BoardTransform, viewport: Point, bounds: Bounds): BoardTransform {
-  const minScale = getFitScale(bounds, viewport);
-  const contentWidth = (bounds.maxX - bounds.minX) * transform.scale;
-  const contentHeight = (bounds.maxY - bounds.minY) * transform.scale;
+function clampTransform(transform: BoardTransform, viewport: Point): BoardTransform {
+  const scale = clamp(transform.scale, ABSOLUTE_MIN_SCALE, MAX_SCALE);
+  const contentWidth = CANVAS_WIDTH * scale;
+  const contentHeight = CANVAS_HEIGHT * scale;
   const availableWidth = Math.max(0, viewport.x - BOARD_SIDE_GUTTER * 2);
   const availableHeight = Math.max(0, viewport.y - BOARD_TOP_GUTTER - BOARD_BOTTOM_GUTTER);
 
-  const centeredX = viewport.x / 2 - (bounds.minX + (bounds.maxX - bounds.minX) / 2) * transform.scale;
-  const leftAlignedX = BOARD_SIDE_GUTTER - bounds.minX * transform.scale;
-  const rightAlignedX = viewport.x - BOARD_SIDE_GUTTER - bounds.maxX * transform.scale;
+  const centeredX = viewport.x / 2 - CANVAS_WIDTH * scale / 2;
+  const leftAlignedX = BOARD_SIDE_GUTTER;
+  const rightAlignedX = viewport.x - BOARD_SIDE_GUTTER - CANVAS_WIDTH * scale;
 
   const x =
     contentWidth <= availableWidth
       ? centeredX
       : clamp(transform.x, Math.min(rightAlignedX, leftAlignedX), Math.max(rightAlignedX, leftAlignedX));
 
-  const topAlignedY = BOARD_TOP_GUTTER - bounds.minY * transform.scale;
-  const bottomAlignedY = viewport.y - BOARD_BOTTOM_GUTTER - bounds.maxY * transform.scale;
+  const topAlignedY = BOARD_TOP_GUTTER;
+  const bottomAlignedY = viewport.y - BOARD_BOTTOM_GUTTER - CANVAS_HEIGHT * scale;
 
   const y =
     contentHeight <= availableHeight
@@ -181,7 +181,7 @@ function clampTransform(transform: BoardTransform, viewport: Point, bounds: Boun
       : clamp(transform.y, Math.min(bottomAlignedY, topAlignedY), Math.max(bottomAlignedY, topAlignedY));
 
   return {
-    scale: clamp(transform.scale, minScale, MAX_SCALE),
+    scale,
     x,
     y,
   };
@@ -364,6 +364,7 @@ function CircleVisual({ size, colors, snap, imageUri }: { size: number; colors: 
       snap={snap}
       imageUri={imageUri}
       fallbackColors={colors}
+      fallbackLabel="No cover yet"
       style={{
         width: size - 20,
         height: size - 20,
@@ -409,6 +410,7 @@ function ArchVisual({ width, height, colors, snap, imageUri }: { width: number; 
       snap={snap}
       imageUri={imageUri}
       fallbackColors={colors}
+      fallbackLabel="No cover yet"
       style={{
         width: width - 20,
         height: height - 20,
@@ -437,6 +439,7 @@ function TallVisual({ width, height, colors, snap, imageUri }: { width: number; 
       snap={snap}
       imageUri={imageUri}
       fallbackColors={colors}
+      fallbackLabel="No cover yet"
       style={{
         width: width - 20,
         height: height - 20,
@@ -483,6 +486,7 @@ function PrimaryVisual({ size, colors, snap, imageUri }: { size: number; colors:
         snap={snap}
         imageUri={imageUri}
         fallbackColors={colors}
+        fallbackLabel="No cover yet"
         style={{
           flex: 1,
           borderRadius: 42,
@@ -712,6 +716,7 @@ function ShelfListItem({
             snap={coverSnap}
             imageUri={coverImageUri}
             fallbackColors={colors}
+            fallbackLabel="No cover yet"
             style={{
               width: 88,
               height: 88,
@@ -1617,7 +1622,7 @@ export default function BoardScreen() {
   }, [user?.id]);
 
   function applyTransform(nextTransform: BoardTransform) {
-    setBoardTransform(clampTransform(nextTransform, viewport, contentBounds));
+    setBoardTransform(clampTransform(nextTransform, viewport));
   }
 
   useEffect(() => {
@@ -1638,22 +1643,6 @@ export default function BoardScreen() {
         : getShelfFocusTransform(gridSearchFocusNode.node, viewport, fitScale),
     );
   }, [fitScale, gridSearchFocusNode, trimmedSearchQuery, viewMode, viewport]);
-
-  function zoomToFit() {
-    if (viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
-      return;
-    }
-
-    const bounds = contentBounds;
-    const contentWidth = bounds.maxX - bounds.minX;
-    const targetScale = fitScale;
-
-    applyTransform({
-      scale: targetScale,
-      x: viewport.x / 2 - (bounds.minX + contentWidth / 2) * targetScale,
-      y: BOARD_TOP_GUTTER - bounds.minY * targetScale,
-    });
-  }
 
   useEffect(() => {
     if (!shouldCenterOnOpen || viewport.x === 0 || viewport.y === 0 || (resolvedShelves.length === 0 && resolvedStacks.length === 0)) {
@@ -1694,7 +1683,7 @@ export default function BoardScreen() {
 
   function zoomTo(nextScale: number, focalPoint?: Point) {
     const current = transformRef.current;
-    const clampedScale = clamp(nextScale, fitScale, MAX_SCALE);
+    const clampedScale = clamp(nextScale, ABSOLUTE_MIN_SCALE, MAX_SCALE);
     const targetPoint = focalPoint ?? { x: viewport.x / 2, y: viewport.y / 2 };
     const focalCanvas = {
       x: (targetPoint.x - current.x) / current.scale,
@@ -1735,7 +1724,7 @@ export default function BoardScreen() {
     const midpoint = getMidpoint(first, second);
     const nextScale = clamp(
       gesture.startTransform.scale * (getDistance(first, second) / Math.max(gesture.startDistance, 1)),
-      fitScale,
+      ABSOLUTE_MIN_SCALE,
       MAX_SCALE,
     );
 
@@ -2298,8 +2287,8 @@ export default function BoardScreen() {
                 <View
                   style={{
                     position: 'absolute',
-                    right: 10,
-                    bottom: 114,
+                    left: 10,
+                    bottom: 20,
                     width: 58,
                     backgroundColor: theme.colors.surface,
                     borderRadius: 30,
@@ -2312,20 +2301,20 @@ export default function BoardScreen() {
                     shadowOffset: { width: 0, height: 10 },
                   }}
                 >
-                  <Pressable onPress={() => zoomTo(boardTransform.scale + 0.12)} hitSlop={10}>
+                  <Pressable
+                    onPress={() => zoomTo(boardTransform.scale + 0.12)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Zoom in"
+                  >
                     <Feather name="plus" size={24} color={theme.colors.primary} />
                   </Pressable>
                   <View style={{ width: 28, height: 1, backgroundColor: theme.colors.borderSoft }} />
                   <Pressable
-                    onPress={() => {
-                      if (boardTransform.scale - 0.12 <= fitScale + 0.01) {
-                        zoomToFit();
-                        return;
-                      }
-
-                      zoomTo(boardTransform.scale - 0.12);
-                    }}
+                    onPress={() => zoomTo(boardTransform.scale - 0.12)}
                     hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Zoom out"
                   >
                     <Feather name="minus" size={24} color={theme.colors.primary} />
                   </Pressable>
@@ -2338,9 +2327,6 @@ export default function BoardScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 124 }}
             >
-              <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.md }}>
-                <Text style={textStyles.bodySm}>Use List as a readable map of every Stack and Shelf, including empty containers and grouped relationships.</Text>
-              </SurfaceCard>
               {resolvedStacks.length > 0 ? <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stacks</Text> : null}
               {resolvedStacks.map((stack) => (
                 <View key={stack.id} style={{ marginBottom: theme.spacing.md }}>

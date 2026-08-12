@@ -3,14 +3,30 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const DEVICE_ID_KEY = 'snapshelf:installation-id';
+const DEVICE_ID_KEY = 'snapshelf.installation-id';
+const LEGACY_DEVICE_ID_KEY = 'snapshelf:installation-id';
 
 let deviceIdPromise: Promise<string> | null = null;
 
 async function readDeviceId() {
-  return Platform.OS === 'web'
-    ? AsyncStorage.getItem(DEVICE_ID_KEY)
-    : SecureStore.getItemAsync(DEVICE_ID_KEY);
+  const deviceId = Platform.OS === 'web'
+    ? await AsyncStorage.getItem(DEVICE_ID_KEY)
+    : await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  if (deviceId) {
+    return deviceId;
+  }
+
+  if (Platform.OS !== 'web') {
+    return null;
+  }
+
+  const legacyDeviceId = await AsyncStorage.getItem(LEGACY_DEVICE_ID_KEY);
+  if (legacyDeviceId) {
+    await AsyncStorage.setItem(DEVICE_ID_KEY, legacyDeviceId);
+    await AsyncStorage.removeItem(LEGACY_DEVICE_ID_KEY);
+  }
+
+  return legacyDeviceId;
 }
 
 async function writeDeviceId(deviceId: string) {

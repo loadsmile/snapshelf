@@ -192,7 +192,7 @@ export function subscribeToShelves(userId: string, callback: (shelves: Shelf[]) 
       },
     )
     .subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' && error) {
+      if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
         onError?.(error instanceof Error ? error : new Error('Shelf realtime subscription failed.'));
       }
     });

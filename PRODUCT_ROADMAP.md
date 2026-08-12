@@ -196,6 +196,49 @@ V1 should prioritize:
 3. Complete accessibility and real-device QA across iOS and Android, including email confirmation and password recovery links.
 4. Bound Library reads, remove the Board's 200-Snap limitation, and reconcile orphaned local media.
 
+## Soft Launch TODO
+
+Assumes an invite-only TestFlight and Google Play internal-testing launch before broader store distribution.
+
+### Release Blockers
+
+- [ ] Freeze a release candidate from a clean, reviewed commit and tag; retain the EAS build IDs and checksums.
+- [ ] Review all current uncommitted changes and ensure preview APKs are not treated as authoritative release artifacts.
+- [ ] Verify the production Supabase project has every migration, RLS policy, Realtime publication, Auth redirect, and required secret applied.
+- [ ] Verify the deployed `delete-account` Edge Function against a disposable production account.
+- [ ] Verify production email confirmation and password-recovery delivery and deep links from cold and warm app states.
+- [ ] Confirm Supabase rate limits, backups, spending limits, and production monitoring ownership.
+- [ ] Publish a privacy policy and support contact that accurately describe synced metadata, device-local images, retention, deletion, backups, and telemetry.
+- [ ] Add privacy-policy and support links to Settings and the store listings.
+- [ ] Verify account deletion removes backend records and current-device images; report local cleanup failures or adjust the user-facing promise.
+- [ ] Inspect final Android and iOS artifacts for permissions, purpose strings, URL schemes, share-extension rules, entitlements, signing, and backup behavior.
+- [ ] Remove unused microphone, overlay, and broad-storage permissions from the final Android artifact.
+- [ ] Complete release-build QA on real iOS and Android devices for auth, recovery, imports, share intents, restart persistence, missing-image recovery, destructive actions, and account deletion.
+- [ ] Test denied permissions, connection loss, dark mode, large text, and VoiceOver/TalkBack on release builds.
+- [ ] Configure EAS production variables, signing credentials, App Store Connect, Play Console, and submission access.
+- [ ] Complete store screenshots, descriptions, privacy labels, content rating, support URL, privacy URL, and review notes.
+- [ ] Set up a monitored support inbox, privacy-reviewed crash/error reporting, and Supabase auth/function/usage monitoring.
+- [ ] Document the release, rollback, incident-response, and post-release smoke procedures.
+- [ ] Launch through TestFlight and Google Play internal testing first, then expand access gradually after monitoring early usage.
+
+### Release Gate
+
+- [ ] Run `npm ci` from the clean release commit.
+- [ ] Run `npm run typecheck` and `npm test`.
+- [ ] Run `npx expo-doctor`.
+- [ ] Run `npm run db:start`, `npm run db:reset`, and `npm run test:db`.
+- [ ] Export both platforms with `npx expo export --platform ios` and `npx expo export --platform android`.
+- [ ] Build with EAS, install the exact resulting artifacts, and complete the real-device QA matrix before inviting testers.
+
+### Safe To Defer
+
+- [ ] Paginate or server-filter Library before accounts can approach the 1,000-row response limit.
+- [ ] Remove the Board's 200-Snap search limitation.
+- [ ] Add full offline metadata synchronization and cloud image synchronization.
+- [ ] Add advanced product analytics and OTA updates.
+- [ ] Expand component, Edge Function, and end-to-end automation coverage.
+- [ ] Add automated account-data export if the initial documented manual process is insufficient.
+
 ## QA Priorities
 
 Run a real-device or simulator pass for:

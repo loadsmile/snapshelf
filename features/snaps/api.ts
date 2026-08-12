@@ -202,8 +202,7 @@ function subscribeToSnapRefetch(
     .subscribe((status, error) => {
       if (status === 'SUBSCRIBED') {
         void guardedRefetch();
-      }
-      if (isSubscribed && status === 'CHANNEL_ERROR' && error) {
+      } else if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
         onError?.(error instanceof Error ? error : new Error('Snap realtime subscription failed.'));
       }
     });

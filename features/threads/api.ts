@@ -195,7 +195,7 @@ export function subscribeToThreads(userId: string, callback: (threads: ShelfThre
       },
     )
     .subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' && error) {
+      if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
         onError?.(error instanceof Error ? error : new Error('Thread realtime subscription failed.'));
       }
     });

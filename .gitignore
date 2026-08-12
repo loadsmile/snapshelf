@@ -42,3 +42,8 @@ supabase/.branches/
 # generated native folders
 /ios
 /android
+
+# local native build artifacts
+*.apk
+*.aab
+*.ipa

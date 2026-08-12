@@ -5,7 +5,7 @@ import { Switch, Text, View } from 'react-native';
 
 import { getAuthErrorMessage } from '@/features/auth/api';
 import { useAuth } from '@/features/auth/useAuth';
-import { summarizeLocalMediaHealth, type LocalMediaHealthSummary } from '@/features/images/health';
+import { getLocalMediaHealthMessage, summarizeLocalMediaHealth, type LocalMediaHealthSummary } from '@/features/images/health';
 import { getLocalImageAvailability } from '@/features/images/local';
 import { seedSampleData } from '@/features/sample-data/api';
 import { listAllSnaps } from '@/features/snaps/api';
@@ -98,17 +98,16 @@ export default function SettingsScreen() {
 
       const snaps = await listAllSnaps(user.id);
       const localPaths = [...new Set(snaps.map((snap) => snap.localPath).filter((localPath): localPath is string => Boolean(localPath)))];
-      const availabilityEntries = await Promise.all(localPaths.map(async (localPath) => [localPath, await getLocalImageAvailability(localPath)] as const));
+      const availabilityEntries: Array<readonly [string, Awaited<ReturnType<typeof getLocalImageAvailability>>]> = [];
+      for (let index = 0; index < localPaths.length; index += 20) {
+        availabilityEntries.push(...await Promise.all(
+          localPaths.slice(index, index + 20).map(async (localPath) => [localPath, await getLocalImageAvailability(localPath)] as const),
+        ));
+      }
       const summary = summarizeLocalMediaHealth(snaps, new Map(availabilityEntries));
 
       setMediaHealth(summary);
-      if (summary.unavailable > 0) {
-        setMediaHealthMessage('Local file storage is unavailable on this device right now. Snap metadata is still safe in the backend.');
-      } else if (summary.missing > 0) {
-        setMediaHealthMessage('Some Snap images are missing from this device. Their titles, notes, labels, and Shelf assignments are still available.');
-      } else {
-        setMediaHealthMessage('Local media looks healthy on this device.');
-      }
+      setMediaHealthMessage(getLocalMediaHealthMessage(summary));
     } catch (error) {
       setMediaHealthMessage(error instanceof Error ? error.message : 'Unable to check local media right now.');
     } finally {
@@ -323,6 +322,25 @@ export default function SettingsScreen() {
             />
           </SurfaceCard>
 
+          <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.lg }}>
+            <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>On-Device Images</Text>
+            <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Local media health</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>Titles, notes, labels, and Shelf assignments sync with your account. Images stay only on the device where you added them and cannot be restored after uninstalling SnapShelf.</Text>
+            <Text style={[textStyles.bodySm, { marginBottom: theme.spacing.lg }]}>If an image is missing, open its Snap to replace the image, remove the old reference, or open the original source link when available.</Text>
+            <PillButton
+              label={isCheckingMedia ? 'Checking Media...' : 'Check Local Media'}
+              icon="hard-drive"
+              onPress={handleCheckLocalMedia}
+              disabled={isCheckingMedia || !user?.id}
+              testID="settings-check-local-media-button"
+              fullWidth
+            />
+            {mediaHealth ? (
+              <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Snaps: {mediaHealth.totalSnaps} | Local paths: {mediaHealth.withLocalPath} | Available: {mediaHealth.available} | Missing: {mediaHealth.missing} | No local media: {mediaHealth.withoutLocalMedia}</Text>
+            ) : null}
+            {mediaHealthMessage ? <Text accessibilityLiveRegion="polite" style={[textStyles.bodySm, { color: mediaHealth?.missing || mediaHealth?.unavailable ? theme.colors.primary : theme.colors.textMuted, marginTop: theme.spacing.sm }]}>{mediaHealthMessage}</Text> : null}
+          </SurfaceCard>
+
           {__DEV__ ? (
             <SurfaceCard style={{ marginBottom: theme.spacing.md, padding: theme.spacing.lg }}>
               <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Dev Tools</Text>
@@ -337,22 +355,6 @@ export default function SettingsScreen() {
                 fullWidth
               />
               {seedMessage ? <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>{seedMessage}</Text> : null}
-
-              <View style={{ height: 1, backgroundColor: theme.colors.borderSoft, marginVertical: theme.spacing.lg }} />
-
-              <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Local Media Health</Text>
-              <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Check whether Snap image files saved on this device still match backend metadata.</Text>
-              <PillButton
-                label={isCheckingMedia ? 'Checking Media...' : 'Check Local Media'}
-                icon="hard-drive"
-                onPress={handleCheckLocalMedia}
-                disabled={isCheckingMedia || !user?.id}
-                fullWidth
-              />
-              {mediaHealth ? (
-                <Text style={[textStyles.bodySm, { marginTop: theme.spacing.sm }]}>Snaps: {mediaHealth.totalSnaps} | Local paths: {mediaHealth.withLocalPath} | Available: {mediaHealth.available} | Missing: {mediaHealth.missing} | No local media: {mediaHealth.withoutLocalMedia}</Text>
-              ) : null}
-              {mediaHealthMessage ? <Text style={[textStyles.bodySm, { color: mediaHealth?.missing || mediaHealth?.unavailable ? theme.colors.primary : theme.colors.textMuted, marginTop: theme.spacing.sm }]}>{mediaHealthMessage}</Text> : null}
             </SurfaceCard>
           ) : null}
         </>

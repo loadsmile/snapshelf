@@ -97,6 +97,7 @@ The versioned files under `supabase/migrations/` are the backend source of truth
 - `npm run db:start` - start the local Supabase stack with Docker
 - `npm run db:reset` - rebuild the local database from versioned migrations
 - `npm run test:db` - run transactional database and RLS tests
+- `npm run release:verify` - run type checks, unit tests, Expo Doctor, both platform exports, and the critical dependency audit
 
 ## Production Builds
 
@@ -104,12 +105,12 @@ Native builds use `com.loadsmile.snapshelf` on both platforms. `eas.json` define
 
 Before the first EAS build:
 
-1. Run `npx eas-cli login` and `npx eas-cli init` to create or link the Expo project. Commit the generated `expo.extra.eas.projectId` value in `app.json`.
+1. Confirm `npx eas-cli whoami` and `npx eas-cli project:info` resolve the linked Expo project in `app.json`.
 2. Configure `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the EAS `preview` and `production` environments.
 3. Add an `EXPO_TOKEN` repository secret in GitHub.
 4. Configure App Store Connect and Google Play credentials in EAS.
 
-The `EAS Build` GitHub Actions workflow can then create production builds on demand and optionally submit successful builds. The regular `CI` workflow runs TypeScript, unit tests, Expo Doctor, an iOS production export, a critical-vulnerability dependency audit, and local Supabase database tests.
+The `EAS Build` GitHub Actions workflow runs the release verification command, waits for production builds, and retains the exact archives, EAS metadata, and SHA-256 checksums. After those artifacts pass `docs/RELEASE_QA.md`, use the separate `EAS Submit` workflow with the approved EAS build ID. The regular `CI` workflow runs TypeScript, unit tests, Expo Doctor, an iOS production export, a critical-vulnerability dependency audit, and local Supabase database tests.
 
 Push hosted Auth settings from the linked Supabase project after reviewing `supabase/config.toml`:
 
@@ -122,6 +123,7 @@ npx supabase config push
 - `README.md` - project entry point and setup
 - `TECHNICAL_OVERVIEW.md` - architecture, Supabase setup, schema, RLS, Realtime, and QA notes
 - `PRODUCT_ROADMAP.md` - product direction, scope, roadmap, and product constraints
+- `docs/RELEASE_QA.md` - production-artifact inspection, device QA, backend checks, and release approval
 
 ## Testing
 

@@ -12,14 +12,10 @@ on:
           - all
           - ios
           - android
-      submit:
-        description: Submit successful builds to the stores
-        required: true
-        default: false
-        type: boolean
 
 jobs:
   production:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/rc-')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +24,22 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Verify release ref
+        run: |
+          test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - uses: expo/expo-github-action@v8
         with:
-          eas-version: latest
+          eas-version: 16.28.0
           token: ${{ secrets.EXPO_TOKEN }}
-      - name: Build
-        if: ${{ !inputs.submit }}
-        run: eas build --platform "${{ inputs.platform }}" --profile production --non-interactive --no-wait
-      - name: Build and submit
-        if: ${{ inputs.submit }}
-        run: eas build --platform "${{ inputs.platform }}" --profile production --auto-submit --non-interactive --no-wait
+      - run: npm run release:verify
+      - name: Build and wait for artifacts
+        run: eas build --platform "${{ inputs.platform }}" --profile production --non-interactive --wait --json > eas-build.json
+      - name: Record build IDs and artifact checksums
+        run: node scripts/record-eas-builds.mjs eas-build.json release-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eas-production-${{ inputs.platform }}-${{ github.sha }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 90

@@ -18,13 +18,23 @@
       "bundleIdentifier": "com.loadsmile.snapshelf"
     },
     "android": {
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#EED9B9"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
       "package": "com.loadsmile.snapshelf"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#F7F1EB",
+      "barStyle": "dark-content"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +42,14 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": false,
+          "microphonePermission": false,
+          "photosPermission": "Allow SnapShelf to import images you choose."
+        }
+      ],
       [
         "expo-share-intent",
         {

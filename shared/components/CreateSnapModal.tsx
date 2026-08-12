@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { importSnapImages, MAX_SNAP_IMPORT_COUNT, type SnapImportProgress } from '@/features/snaps/api';
 import type { Snap, SnapSource } from '@/features/snaps/types';
@@ -232,18 +232,26 @@ export function CreateSnapModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={isSubmitting || isPicking ? () => undefined : onClose}>
-      <Pressable
-        onPress={isSubmitting || isPicking ? undefined : onClose}
+      <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(46, 35, 26, 0.24)',
           justifyContent: 'center',
           paddingHorizontal: theme.spacing.lg,
         }}
       >
-        <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ maxHeight: '92%', padding: theme.spacing.lg }}>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Pressable
+          onPress={isSubmitting || isPicking ? undefined : onClose}
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(46, 35, 26, 0.24)' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Close create Snap dialog"
+        />
+        <SurfaceCard style={{ maxHeight: '92%' }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={{ borderRadius: theme.radii.xl }}
+            contentContainerStyle={{ padding: theme.spacing.lg }}
+          >
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{titleText}</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{copy.description}</Text>
 
@@ -335,10 +343,9 @@ export function CreateSnapModal({
             <View style={{ marginTop: theme.spacing.sm }}>
               <PillButton label="Cancel" variant="secondary" fullWidth onPress={onClose} disabled={isSubmitting} />
             </View>
-            </ScrollView>
-          </SurfaceCard>
-        </Pressable>
-      </Pressable>
+          </ScrollView>
+        </SurfaceCard>
+      </View>
     </Modal>
   );
 }

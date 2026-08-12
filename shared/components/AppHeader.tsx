@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
@@ -21,7 +21,13 @@ export function AppHeader({ onPressSearch, searchIconName = 'search', searchButt
         paddingHorizontal: 4,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={{ width: 38, height: 32 }}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
         <Text style={textStyles.brand}>SnapShelf</Text>
       </View>
       {onPressSearch ? (
