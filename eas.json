@@ -11,7 +11,12 @@
     },
     "production": {
       "autoIncrement": true,
-      "environment": "production"
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "codecrafting.ltd@gmail.com",
+        "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://snapshelf-legal.vercel.app/privacy/",
+        "EXPO_PUBLIC_SUPPORT_URL": "https://snapshelf-legal.vercel.app/"
+      }
     }
   },
   "submit": {
