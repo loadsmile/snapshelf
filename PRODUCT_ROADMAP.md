@@ -191,10 +191,76 @@ V1 should prioritize:
 
 ## Best Next Product Steps
 
-1. Link the Expo project and configure EAS/GitHub credentials for the checked-in build and submission workflows.
-2. Add privacy-reviewed crash/error telemetry, legal/support surfaces, retention policy, and account-data export.
-3. Complete accessibility and real-device QA across iOS and Android, including email confirmation and password recovery links.
-4. Bound Library reads, remove the Board's 200-Snap limitation, and reconcile orphaned local media.
+1. Continue product tweaks and local-phone testing; do not release or submit `rc-1.0.1`.
+2. Replace release-contact placeholders with a real privacy-policy URL, public support URL, monitored support email, and public account-deletion page; legally review and publish the privacy policy.
+3. Assign support and incident owners, configure Supabase and Google Play monitoring, and add privacy-reviewed crash/error telemetry.
+4. Complete the Google Play listing with release-build screenshots and feature graphic, then revalidate the prepared description, Data safety answers, content rating, app access, and review notes against the exact AAB.
+5. Complete Android accessibility and real-device QA, including email confirmation, password recovery, account deletion, Settings legal/support links, and the post-release smoke procedure.
+6. Define production retention periods and an account-data export process.
+7. Resume iOS credentials, production build, and device QA only when iOS release work is reprioritized.
+8. Bound Library reads, remove the Board's 200-Snap limitation, and reconcile orphaned local media.
+
+## Android Release Foundation Status
+
+The release foundation is implemented but not publish-ready. Placeholder contact details are intentional and release-blocking until real public values are supplied.
+
+Completed in the working tree:
+
+- Settings now provides Privacy Policy, Support website, and Support email actions for signed-in and signed-out states.
+- Public contact values are centralized in `shared/config/release.ts` through `EXPO_PUBLIC_PRIVACY_POLICY_URL`, `EXPO_PUBLIC_SUPPORT_URL`, and `EXPO_PUBLIC_SUPPORT_EMAIL`.
+- `npm run release:verify-contact` rejects missing, placeholder, non-HTTPS, or invalid contact values and runs first in `npm run release:verify`.
+- `docs/PRIVACY_POLICY.md` contains a behavior-specific publication draft covering account data, synced metadata, local-only image contents, service providers, backups, retention, deletion, security, children, rights, and contact details.
+- `docs/GOOGLE_PLAY_SUBMISSION.md` contains the proposed app name, short and full descriptions, category/tags, screenshot plan, feature-graphic requirement, Data safety filing, content-rating facts, reviewer-account requirements, and review-notes template.
+- `docs/RELEASE_OPERATIONS.md` defines support intake and severity, monitoring ownership, incident response, staged rollout, forward-fix rollback, and post-release smoke procedures.
+- `docs/RELEASE_QA.md` now includes legal, store, support, reviewer-account, monitoring, screenshot, and rollback gates.
+- Verification passed with TypeScript, all 92 unit tests, `npx expo-doctor` (17/17), `git diff --check`, and `npm audit --omit=dev --audit-level=critical` (0 critical). The contact validator passed with valid sample values and failed with repository placeholders as intended.
+
+Still release-blocking:
+
+- Replace every bracketed runbook field (`[NAME]`) in `docs/RELEASE_OPERATIONS.md` with reviewed ownership details. The `example.invalid` contact placeholders now exist only as code-level fallbacks; the reviewed production values live in `eas.json` `build.production.env` and are embedded at build time.
+- Obtain legal/owner approval for the privacy policy, including exact Supabase hosting, operational-log, backup, support-mailbox, and deletion-request retention periods.
+- Confirm whether Supabase is contractually a service provider before filing `Data shared: No`; revalidate all Data safety answers against the exact production behavior.
+- Assign primary and backup owners for release command, support, Supabase/Auth/Edge Functions, Google Play health, privacy/deletion requests, and incident communications.
+- Configure and test the monitored support inbox, Supabase alerts, Google Play Android vitals, and privacy-reviewed production crash/error reporting.
+- Verify the deployed in-app deletion flow with a disposable production account; the public account-deletion page is already published.
+- Capture rights-cleared phone screenshots and the 1024 x 500 feature graphic from the exact next release build; do not use the archived `rc-1.0.1` artifact.
+- Create and verify a disposable reviewer account with representative sample data, then enter the final listing, app access, content rating, Data safety, and review notes in Play Console.
+- Run the complete Android release QA and post-release smoke procedures from the Play-delivered artifact before staged production rollout.
+- Upgrade `vitest` past 4.1.10 to clear the remaining dev-only `tinypool` prototype-pollution advisory. It is not shipped in the app and does not gate `npm audit --omit=dev --audit-level=critical`, so it is tracked separately from the release.
+
+## RC 1.0.1 Release Status
+
+`rc-1.0.1` is archived and will not be released. Product tweaks and local-phone testing continue. iOS release work remains intentionally deferred; no iOS credential setup, build, QA, or submission is currently planned.
+
+- Release tag: `rc-1.0.1`
+- Release commit: `9e4e2aee595ef8065f620afb0287e12d4df3100d`
+- Release tag and commit verification: `main`, `origin/main`, and `rc-1.0.1` all resolved to the release commit before this release-status documentation update
+- Android production EAS build: `332c3587-66ad-40be-972f-1e378d3685c1`
+- Android build source: exact release commit, app version `1.0.0`, build number `3`
+- Android build status: finished successfully August 12, 2026 at 13:18:10 UTC
+- Android production artifact: `snapshelf-android-1.0.0-3.aab`
+- Android SHA-256: `f743faeec6fee2808a580925636eb0efb2d5c789da47d6e1139bb63406d54712`
+- Release decision: archived, unreleased, and not approved for device QA or Google Play submission
+- Reuse policy: any code or configuration change requires a new clean commit, new RC tag, new production EAS build ID, Android build number greater than `3`, and new SHA-256
+- Forbidden obsolete Android build: `a09efdc8-2f9e-49d6-a9ca-ed280f8fa6e9` from commit `d960e8e`
+- Failed GitHub Actions run retained for history: `31597495357`
+- iOS production build: not created and intentionally deferred
+- Store submissions: none; never submit this archived artifact
+
+## Before The Actual Android Release
+
+1. Finish product tweaks and local testing, then resolve known severity-one and severity-two defects.
+2. Freeze a clean, reviewed commit and create a new RC tag. Do not move or reuse `rc-1.0.1`.
+3. From the clean release commit, run `npm ci`, `npm run typecheck`, `npm test`, `npx expo-doctor`, `npm run db:start`, `npm run db:reset`, `npm run test:db`, `npx expo export --platform android`, and the production dependency/security review.
+4. Verify production Supabase migrations, RLS account isolation, Realtime recovery, Auth confirmation and recovery redirects from cold and warm app states, the deployed `delete-account` function, backups, limits, secrets, and monitoring ownership.
+5. Finalize the existing release foundation: replace contact placeholders, publish and legally approve the privacy/support/deletion pages, assign operational owners, configure monitoring, capture release-build store assets, and enter/revalidate the prepared Play Console content from `docs/GOOGLE_PLAY_SUBMISSION.md`.
+6. Create a new Android production AAB from the frozen commit with an Android build number greater than `3`.
+7. Retain the exact AAB, EAS build ID, source commit, app version, build number, and SHA-256. Inspect its package ID, signing, permissions, `snapshelf://` scheme, backup behavior, adaptive icon, and splash screen.
+8. Only with explicit approval, upload that exact AAB to Google Play internal testing. Never substitute a preview APK or independently generated build.
+9. Install the Play-delivered artifact and complete every Android-applicable check in `docs/RELEASE_QA.md`, recording tester, date, device model, Android version, OS build/security patch, and every PASS, FAIL, or BLOCKED result.
+10. Cover a current and an older supported Android OS where possible, including auth, recovery, imports, share intents, restart persistence, upgrade behavior, missing-image recovery, offline/reconnect behavior, permissions, dark mode, largest text, TalkBack, destructive actions, and account deletion.
+11. Give every failure an owner and disposition. Any release-affecting fix requires another commit, build, checksum, and complete applicable retest.
+12. Approve a staged production rollout only when the exact internal-test artifact has passed QA, no severity-one or severity-two release defect remains, and support and rollback owners are available.
 
 ## Soft Launch TODO
 
@@ -202,33 +268,40 @@ Assumes an invite-only TestFlight and Google Play internal-testing launch before
 
 ### Release Blockers
 
-- [ ] Freeze a release candidate from a clean, reviewed commit and tag; retain the EAS build IDs and checksums.
-- [ ] Review all current uncommitted changes and ensure preview APKs are not treated as authoritative release artifacts.
+- [x] Finish the frozen Android release candidate build from clean tag `rc-1.0.1` at `9e4e2aee595ef8065f620afb0287e12d4df3100d`; retain build ID `332c3587-66ad-40be-972f-1e378d3685c1` and SHA-256 `f743faeec6fee2808a580925636eb0efb2d5c789da47d6e1139bb63406d54712`.
+- [x] Review the release worktree and ensure preview APKs are not treated as authoritative release artifacts.
 - [ ] Verify the production Supabase project has every migration, RLS policy, Realtime publication, Auth redirect, and required secret applied.
 - [ ] Verify the deployed `delete-account` Edge Function against a disposable production account.
 - [ ] Verify production email confirmation and password-recovery delivery and deep links from cold and warm app states.
 - [ ] Confirm Supabase rate limits, backups, spending limits, and production monitoring ownership.
+- [x] Add centralized privacy/support configuration and Settings actions for Privacy Policy, Support website, and Support email.
+- [x] Add a release-contact validator and make it the first step of `npm run release:verify`.
+- [x] Draft the behavior-specific privacy policy in `docs/PRIVACY_POLICY.md`.
+- [x] Prepare Google Play description, screenshot plan, Data safety answers, content-rating facts, reviewer-account requirements, and review notes in `docs/GOOGLE_PLAY_SUBMISSION.md`.
+- [x] Document support triage, incident response, staged rollout, forward-fix rollback, and post-release smoke procedures in `docs/RELEASE_OPERATIONS.md`.
 - [ ] Publish a privacy policy and support contact that accurately describe synced metadata, device-local images, retention, deletion, backups, and telemetry.
-- [ ] Add privacy-policy and support links to Settings and the store listings.
+- [ ] Replace placeholder release contacts with real production values and confirm `npm run release:verify-contact` passes in the EAS production environment.
+- [ ] Publish public privacy, support, and account-deletion pages; add the same links to Play Console and verify every in-app/store link without authentication.
 - [ ] Verify account deletion removes backend records and current-device images; report local cleanup failures or adjust the user-facing promise.
-- [ ] Inspect final Android and iOS artifacts for permissions, purpose strings, URL schemes, share-extension rules, entitlements, signing, and backup behavior.
+- [ ] Inspect the final Android artifact for permissions, URL schemes, signing, and backup behavior. Inspect iOS separately when its release resumes.
 - [ ] Remove unused microphone, overlay, and broad-storage permissions from the final Android artifact.
-- [ ] Complete release-build QA on real iOS and Android devices for auth, recovery, imports, share intents, restart persistence, missing-image recovery, destructive actions, and account deletion.
-- [ ] Test denied permissions, connection loss, dark mode, large text, and VoiceOver/TalkBack on release builds.
-- [ ] Configure EAS production variables, signing credentials, App Store Connect, Play Console, and submission access.
-- [ ] Complete store screenshots, descriptions, privacy labels, content rating, support URL, privacy URL, and review notes.
-- [ ] Set up a monitored support inbox, privacy-reviewed crash/error reporting, and Supabase auth/function/usage monitoring.
-- [ ] Document the release, rollback, incident-response, and post-release smoke procedures.
-- [ ] Launch through TestFlight and Google Play internal testing first, then expand access gradually after monitoring early usage.
+- [ ] Complete Android release-build QA on real devices for auth, recovery, imports, share intents, restart persistence, missing-image recovery, destructive actions, and account deletion.
+- [ ] Test denied permissions, connection loss, dark mode, large text, and TalkBack on the Android release build. Defer iOS and VoiceOver QA.
+- [ ] Verify Android EAS production variables, signing credentials, Play Console, and submission access. Defer iOS credentials and App Store Connect setup.
+- [ ] Capture rights-cleared screenshots and a feature graphic from the exact release build; enter and revalidate the prepared description, Data safety answers, content rating, app access, and review notes in Play Console.
+- [ ] Assign named primary/backup operational owners and set up a tested monitored support inbox, privacy-reviewed crash/error reporting, Supabase auth/function/usage alerts, and Google Play health monitoring.
+- [ ] Complete every bracketed ownership field in `docs/RELEASE_OPERATIONS.md` and rehearse incident, rollback, and post-release smoke procedures.
+- [ ] After Android device QA approval, launch through Google Play internal testing first, then expand access gradually after monitoring early usage. TestFlight is deferred.
 
 ### Release Gate
 
 - [ ] Run `npm ci` from the clean release commit.
+- [ ] Run `npm run release:verify-contact` with real production contact values.
 - [ ] Run `npm run typecheck` and `npm test`.
 - [ ] Run `npx expo-doctor`.
 - [ ] Run `npm run db:start`, `npm run db:reset`, and `npm run test:db`.
-- [ ] Export both platforms with `npx expo export --platform ios` and `npx expo export --platform android`.
-- [ ] Build with EAS, install the exact resulting artifacts, and complete the real-device QA matrix before inviting testers.
+- [ ] Export Android with `npx expo export --platform android`; defer the iOS export until iOS release work resumes.
+- [ ] Build Android with EAS, install the exact resulting artifact through an approved path, and complete the Android real-device QA matrix before inviting testers.
 
 ### Safe To Defer
 

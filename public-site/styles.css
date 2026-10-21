@@ -1,0 +1,8 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; background: #f7f1eb; color: #29221f; }
+body { margin: 0; }
+main { max-width: 740px; margin: 0 auto; padding: 32px 20px 80px; line-height: 1.6; }
+nav { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 36px; }
+a { color: #71421f; }
+h1, h2 { line-height: 1.2; }
+section { margin-top: 32px; }
+.notice { padding: 16px; border: 2px solid #a34b2c; background: #fff5eb; }
