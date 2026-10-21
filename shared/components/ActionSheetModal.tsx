@@ -39,7 +39,7 @@ export function ActionSheetModal({ visible, title, description, actions, onClose
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: description ? theme.spacing.xs : theme.spacing.md }]}>{title}</Text>
             {description ? <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{description}</Text> : null}
 

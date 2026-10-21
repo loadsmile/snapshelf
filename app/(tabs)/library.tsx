@@ -18,6 +18,7 @@ import {
   subscribeToAllSnaps,
   updateSnapDetails,
 } from '@/features/snaps/api';
+import { snapDateOptions as dateOptions, snapSortOptions as sortOptions, snapSourceOptions as sourceOptions, snapStatusOptions as statusOptions } from '@/features/snaps/filter-options';
 import { collectSnapLabels, filterLibrarySnaps, type SnapLibraryDateRange, type SnapLibrarySort, type SnapLibraryStatus } from '@/features/snaps/library';
 import { formatCapturedAt, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
 import type { Snap, SnapSource, UpdateSnapInput } from '@/features/snaps/types';
@@ -25,10 +26,12 @@ import { subscribeToShelves } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
 import { AppHeader } from '@/shared/components/AppHeader';
+import { CompactControlPill } from '@/shared/components/CompactControlPill';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { FromYourArchiveRow } from '@/shared/components/FromYourArchiveRow';
 import { LibraryFilterSheet } from '@/shared/components/LibraryFilterSheet';
 import { Screen } from '@/shared/components/Screen';
+import { ScreenTitle } from '@/shared/components/ScreenTitle';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { ShelfPickerModal } from '@/shared/components/ShelfPickerModal';
 import { SnapBulkActionBar } from '@/shared/components/SnapBulkActionBar';
@@ -36,117 +39,10 @@ import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { useArchiveRediscovery } from '@/shared/hooks/useArchiveRediscovery';
+import { useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 import { useSnapSelection } from '@/shared/hooks/useSnapSelection';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
-
-const sourceOptions: Array<{ label: string; value: SnapSource | 'all' }> = [
-  { label: 'All Sources', value: 'all' },
-  { label: 'Camera Roll', value: 'camera-roll' },
-  { label: 'Web Clip', value: 'web-clip' },
-  { label: 'Instagram', value: 'instagram' },
-  { label: 'Quick Snap', value: 'quick-snap' },
-  { label: 'Manual', value: 'manual' },
-];
-
-const dateOptions: Array<{ label: string; value: SnapLibraryDateRange }> = [
-  { label: 'Any Time', value: 'any' },
-  { label: '7 Days', value: '7d' },
-  { label: '30 Days', value: '30d' },
-  { label: '90 Days', value: '90d' },
-  { label: 'This Year', value: 'year' },
-];
-
-const sortOptions: Array<{ label: string; value: SnapLibrarySort }> = [
-  { label: 'Newest', value: 'newest' },
-  { label: 'Oldest', value: 'oldest' },
-  { label: 'Updated', value: 'updated' },
-  { label: 'Favorites First', value: 'favorites' },
-];
-
-const statusOptions: Array<{ label: string; value: SnapLibraryStatus }> = [
-  { label: 'Active', value: 'active' },
-  { label: 'Archived', value: 'archived' },
-  { label: 'All', value: 'all' },
-];
-
-function CompactControlPill({
-  label,
-  detail,
-  icon,
-  badgeCount,
-  iconOnly,
-  fullWidth,
-  isActive,
-  onPress,
-  accessibilityLabel,
-  disabled = false,
-}: {
-  label: string;
-  detail?: string;
-  icon: keyof typeof Feather.glyphMap;
-  badgeCount?: number;
-  iconOnly?: boolean;
-  fullWidth?: boolean;
-  isActive: boolean;
-  onPress: () => void;
-  accessibilityLabel?: string;
-  disabled?: boolean;
-}) {
-  const textColor = isActive ? theme.colors.surface : theme.colors.text;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          borderRadius: theme.radii.pill,
-          borderWidth: 1,
-          minHeight: 44,
-          paddingHorizontal: iconOnly ? 12 : 14,
-          paddingVertical: 10,
-          alignSelf: fullWidth ? 'stretch' : 'flex-start',
-        },
-        isActive
-          ? {
-              backgroundColor: theme.colors.primary,
-              borderColor: theme.colors.primary,
-            }
-          : {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.borderSoft,
-            },
-        isActive ? theme.shadows.button : null,
-        disabled ? { opacity: 0.5 } : null,
-      ]}
-    >
-      <Feather name={icon} size={15} color={textColor} />
-      {!iconOnly ? <Text style={[textStyles.bodySm, { color: textColor }]}>{detail ? `${label}: ${detail}` : label}</Text> : null}
-      {badgeCount && badgeCount > 0 ? (
-        <View
-          style={{
-            minWidth: 18,
-            height: 18,
-            borderRadius: 9,
-            paddingHorizontal: 5,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: isActive ? 'rgba(255,255,255,0.18)' : theme.colors.primary,
-          }}
-        >
-          <Text style={[textStyles.bodySm, { color: theme.colors.surface, fontSize: 11, lineHeight: 13 }]}>{badgeCount}</Text>
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
 
 function AppliedFilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
@@ -342,6 +238,7 @@ function LibrarySnapCard({
 }
 
 export default function LibraryScreen() {
+  const { occupiedHeight } = useBottomTabGeometry();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { isConfigured, user } = useAuth();
@@ -368,6 +265,7 @@ export default function LibraryScreen() {
   const [isBulkBusy, setIsBulkBusy] = useState(false);
   const [isBulkMoveVisible, setIsBulkMoveVisible] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [bulkBarHeight, setBulkBarHeight] = useState(0);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const isCompactWidth = width < 390;
@@ -732,16 +630,13 @@ export default function LibraryScreen() {
   }
 
   return (
-    <Screen style={{ paddingBottom: 118 }}>
+    <Screen>
       <AppHeader searchIconName="book-open" />
 
-      <View style={{ marginBottom: theme.spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
-        <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Library</Text>
-        <CompactControlPill label={selection.isSelectionMode ? 'Clear' : 'Select'} icon={selection.isSelectionMode ? 'x' : 'check-square'} isActive={selection.isSelectionMode} onPress={selection.isSelectionMode ? selection.clear : selection.enter} disabled={isBulkBusy || visibleSnaps.length === 0} />
-        </View>
-        <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>Find any Snap fast, whether it is still in The Tray, filed into a Shelf, or archived for later.</Text>
-      </View>
+      <ScreenTitle
+        title="Library"
+        description="Find every Snap across The Tray and your Shelves, then search, filter, or sort the full collection."
+      />
 
       {!isConfigured ? (
         <EmptyState
@@ -796,13 +691,14 @@ export default function LibraryScreen() {
 
       <View
         style={{
-          flexDirection: isCompactWidth ? 'column' : 'row',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
           alignItems: 'stretch',
           gap: theme.spacing.sm,
           marginBottom: activeFilterCount > 0 ? theme.spacing.sm : theme.spacing.md,
         }}
       >
-        <View style={{ flex: 1 }}>
+        <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 110 }}>
           <CompactControlPill
             label="Filters"
             icon="sliders"
@@ -812,7 +708,7 @@ export default function LibraryScreen() {
             onPress={() => setIsFilterSheetVisible(true)}
           />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 110 }}>
           <CompactControlPill
             label="Sort"
             detail={isCompactWidth ? undefined : sortLabel}
@@ -822,15 +718,25 @@ export default function LibraryScreen() {
             onPress={() => setIsSortSheetVisible(true)}
           />
         </View>
-        <View style={isCompactWidth ? { alignSelf: 'stretch' } : undefined}>
+        <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 44 }}>
           <CompactControlPill
             label="Favorites"
             icon="heart"
             iconOnly={!isCompactWidth}
-            fullWidth={isCompactWidth}
+            fullWidth
             isActive={favoritesOnly}
             onPress={() => setFavoritesOnly((current) => !current)}
             accessibilityLabel={favoritesOnly ? 'Disable favorites filter' : 'Enable favorites filter'}
+          />
+        </View>
+        <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 100 }}>
+          <CompactControlPill
+            label={selection.isSelectionMode ? 'Clear' : 'Select'}
+            icon={selection.isSelectionMode ? 'x' : 'check-square'}
+            fullWidth
+            isActive={selection.isSelectionMode}
+            onPress={selection.isSelectionMode ? selection.clear : selection.enter}
+            disabled={isBulkBusy || visibleSnaps.length === 0}
           />
         </View>
       </View>
@@ -920,7 +826,7 @@ export default function LibraryScreen() {
               <FromYourArchiveRow items={archiveRediscovery.items} onPressSnap={(snap) => router.push(`/snap/${snap.id}`)} />
             </View>
           ) : null}
-          contentContainerStyle={{ paddingTop: theme.spacing.sm, paddingBottom: 150 }}
+          contentContainerStyle={{ paddingTop: theme.spacing.sm, paddingBottom: occupiedHeight + theme.spacing.md + (selection.isSelectionMode ? bulkBarHeight + theme.spacing.md : 0) }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         />
@@ -930,6 +836,7 @@ export default function LibraryScreen() {
         <SnapBulkActionBar
           selectedCount={selection.selectedIds.size}
           isBusy={isBulkBusy}
+          onHeightChange={setBulkBarHeight}
           actions={[
             { label: 'Move', icon: 'folder', disabled: selection.selectedIds.size === 0, onPress: () => setIsBulkMoveVisible(true) },
             { label: 'Favorite', icon: 'star', disabled: selection.selectedIds.size === 0, onPress: () => void runBulkAction(() => bulkFavoriteSnaps(user?.id ?? '', [...selection.selectedIds]), 'favorited') },

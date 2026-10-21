@@ -66,7 +66,7 @@ export function RenameOrganizationModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{`Rename ${type}`}</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>{`Choose a clear name that makes this ${type} easy to find.`}</Text>
 

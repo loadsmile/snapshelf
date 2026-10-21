@@ -289,7 +289,7 @@ export function SnapDetailModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ maxHeight: '92%', padding: theme.spacing.md, borderRadius: theme.radii.xl }}>
+          <SurfaceCard modal style={{ maxHeight: '92%', padding: theme.spacing.md, borderRadius: theme.radii.xl }}>
             <View style={{ alignItems: 'center', marginBottom: theme.spacing.md }}>
               <View style={{ width: 44, height: 4, borderRadius: 2, backgroundColor: theme.colors.borderSoft }} />
             </View>

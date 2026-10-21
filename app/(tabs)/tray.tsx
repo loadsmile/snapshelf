@@ -1,9 +1,11 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { useAuth } from '@/features/auth/useAuth';
+import { snapDateOptions, snapSortOptions, snapSourceOptions, snapStatusOptions } from '@/features/snaps/filter-options';
+import { collectSnapLabels, filterLibrarySnaps, type SnapLibraryDateRange, type SnapLibrarySort, type SnapLibraryStatus } from '@/features/snaps/library';
 import { formatCapturedAt, getSnapHeadline, getSnapPalette, getSnapSourceLabel } from '@/features/snaps/presentation';
 import {
   bulkDeleteSnaps,
@@ -18,16 +20,20 @@ import {
   setSnapFavorite,
   updateSnapDetails,
 } from '@/features/snaps/api';
-import type { Snap, UpdateSnapInput } from '@/features/snaps/types';
+import type { Snap, SnapSource, UpdateSnapInput } from '@/features/snaps/types';
 import { createShelf, getDefaultShelfPlacement, subscribeToShelves } from '@/features/shelves/api';
 import type { Shelf } from '@/features/shelves/types';
 import { AppHeader } from '@/shared/components/AppHeader';
+import { ActionSheetModal } from '@/shared/components/ActionSheetModal';
+import { CompactControlPill } from '@/shared/components/CompactControlPill';
 import { CreateShelfModal } from '@/shared/components/CreateShelfModal';
 import { CreateSnapModal } from '@/shared/components/CreateSnapModal';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { LibraryFilterSheet } from '@/shared/components/LibraryFilterSheet';
 import { PillButton } from '@/shared/components/PillButton';
 import { PostSaveConfirmationModal } from '@/shared/components/PostSaveConfirmationModal';
 import { Screen } from '@/shared/components/Screen';
+import { ScreenTitle } from '@/shared/components/ScreenTitle';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { ShelfPickerModal } from '@/shared/components/ShelfPickerModal';
@@ -35,6 +41,7 @@ import { SnapBulkActionBar } from '@/shared/components/SnapBulkActionBar';
 import { SnapDetailModal } from '@/shared/components/SnapDetailModal';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { usePaginatedSnaps } from '@/shared/hooks/usePaginatedSnaps';
+import { useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 import { useSnapSelection } from '@/shared/hooks/useSnapSelection';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
@@ -99,7 +106,7 @@ function TraySnapRow({
   onMove,
   onOpen,
   onToggleFavorite,
-  onArchive,
+  onToggleArchived,
   onDelete,
   isSelectionMode,
   isSelected,
@@ -113,7 +120,7 @@ function TraySnapRow({
   onMove: () => void;
   onOpen: () => void;
   onToggleFavorite: () => void;
-  onArchive: () => void;
+  onToggleArchived: () => void;
   onDelete: () => void;
   isSelectionMode: boolean;
   isSelected: boolean;
@@ -184,11 +191,11 @@ function TraySnapRow({
             onPress={onToggleFavorite}
           />
           <TriageActionButton
-            label="Archive"
-            icon="archive"
+            label={snap.isArchived ? 'Restore' : 'Archive'}
+            icon={snap.isArchived ? 'rotate-ccw' : 'archive'}
             disabled={isBusy}
             loading={isBusy && busyAction === 'archive'}
-            onPress={onArchive}
+            onPress={onToggleArchived}
           />
           <TriageActionButton
             label="Delete"
@@ -206,6 +213,8 @@ function TraySnapRow({
 
 export default function TrayScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const { occupiedHeight, overlayClearance } = useBottomTabGeometry();
   const { isConfigured, user } = useAuth();
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [isLoadingShelves, setIsLoadingShelves] = useState(true);
@@ -225,7 +234,20 @@ export default function TrayScreen() {
   const [isBulkBusy, setIsBulkBusy] = useState(false);
   const [isBulkMoveVisible, setIsBulkMoveVisible] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
-  const { error: snapsError, hasMore, loadMore, loading: isLoadingSnaps, loadingMore, snaps: traySnaps } = usePaginatedSnaps(user?.id, null);
+  const [bulkBarHeight, setBulkBarHeight] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [status, setStatus] = useState<SnapLibraryStatus>('active');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [selectedSource, setSelectedSource] = useState<SnapSource | 'all'>('all');
+  const [selectedLabel, setSelectedLabel] = useState<string | 'all'>('all');
+  const [selectedDateRange, setSelectedDateRange] = useState<SnapLibraryDateRange>('any');
+  const [sort, setSort] = useState<SnapLibrarySort>('newest');
+  const [isFilterSheetVisible, setIsFilterSheetVisible] = useState(false);
+  const [isSortSheetVisible, setIsSortSheetVisible] = useState(false);
+  const { connectionError, error: snapsError, hasMore, loadMore, loading: isLoadingSnaps, loadingMore, snaps: traySnaps } = usePaginatedSnaps(user?.id, null);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isCompactWidth = width < 390;
+  const hasSearch = deferredSearchQuery.trim().length > 0;
 
   useEffect(() => {
     if (!user?.id) {
@@ -250,11 +272,13 @@ export default function TrayScreen() {
     return unsubscribe;
   }, [user?.id]);
 
+  const hasActiveRefinement = hasSearch || status !== 'active' || favoritesOnly || selectedSource !== 'all' || selectedLabel !== 'all' || selectedDateRange !== 'any' || sort !== 'newest';
+
   useEffect(() => {
-    if (!isLoadingSnaps && !loadingMore && hasMore && traySnaps.length > 0 && traySnaps.every((snap) => snap.isArchived)) {
+    if (!isLoadingSnaps && !loadingMore && hasMore && (hasActiveRefinement || (traySnaps.length > 0 && traySnaps.every((snap) => snap.isArchived)))) {
       void loadMore();
     }
-  }, [hasMore, isLoadingSnaps, loadMore, loadingMore, traySnaps]);
+  }, [hasActiveRefinement, hasMore, isLoadingSnaps, loadMore, loadingMore, traySnaps]);
 
   useEffect(() => {
     setMovedSnapIds(new Set());
@@ -274,15 +298,45 @@ export default function TrayScreen() {
   }, [traySnaps]);
 
   const canMoveSnaps = shelves.length > 0 && !isLoadingShelves;
-  const visibleTraySnaps = useMemo(() => traySnaps.filter((snap) => !snap.isArchived && !movedSnapIds.has(snap.id)), [movedSnapIds, traySnaps]);
+  const availableTraySnaps = useMemo(() => traySnaps.filter((snap) => !movedSnapIds.has(snap.id)), [movedSnapIds, traySnaps]);
+  const labelOptions = useMemo(() => collectSnapLabels(availableTraySnaps), [availableTraySnaps]);
+  const visibleTraySnaps = useMemo(() => filterLibrarySnaps(availableTraySnaps, {
+    query: deferredSearchQuery,
+    shelfId: 'tray',
+    source: selectedSource,
+    label: selectedLabel,
+    dateRange: selectedDateRange,
+    status,
+    favoritesOnly,
+    sort,
+  }, new Map()), [availableTraySnaps, deferredSearchQuery, favoritesOnly, selectedDateRange, selectedLabel, selectedSource, sort, status]);
+  const advancedFilterCount = Number(status !== 'active') + Number(selectedSource !== 'all') + Number(selectedLabel !== 'all') + Number(selectedDateRange !== 'any');
+  const activeFilterCount = advancedFilterCount + Number(favoritesOnly) + Number(sort !== 'newest');
+  const sortLabel = snapSortOptions.find((option) => option.value === sort)?.label ?? 'Newest';
   const visibleTraySnapIds = useMemo(() => visibleTraySnaps.map((snap) => snap.id), [visibleTraySnaps]);
-  const selection = useSnapSelection(visibleTraySnapIds, user?.id ?? 'signed-out');
+  const selectionScopeKey = `${user?.id ?? 'signed-out'}:${deferredSearchQuery}:${status}:${favoritesOnly}:${selectedSource}:${selectedLabel}:${selectedDateRange}`;
+  const selection = useSnapSelection(visibleTraySnapIds, selectionScopeKey);
   const selectedTraySnaps = useMemo(() => traySnaps.filter((snap) => selection.selectedIds.has(snap.id)), [selection.selectedIds, traySnaps]);
+  const selectedActiveSnaps = useMemo(() => selectedTraySnaps.filter((snap) => !snap.isArchived), [selectedTraySnaps]);
+  const selectedArchivedSnaps = useMemo(() => selectedTraySnaps.filter((snap) => snap.isArchived), [selectedTraySnaps]);
   const selectedTitle = useMemo(() => (selectedSnap ? getSnapHeadline(selectedSnap) : undefined), [selectedSnap]);
   const activeError = error ?? snapsError;
   const createdSnapDestinationLabel = createdSnap?.shelfId
     ? shelves.find((shelf) => shelf.id === createdSnap.shelfId)?.name ?? 'Selected Shelf'
     : 'The Tray';
+
+  function resetSheetFilters() {
+    setStatus('active');
+    setSelectedSource('all');
+    setSelectedLabel('all');
+    setSelectedDateRange('any');
+  }
+
+  function clearAllAppliedFilters() {
+    resetSheetFilters();
+    setFavoritesOnly(false);
+    setSort('newest');
+  }
 
   const handleEndReached = useCallback(() => {
     if (!isLoadingSnaps && !loadingMore && hasMore) {
@@ -367,13 +421,13 @@ export default function TrayScreen() {
     });
   }
 
-  async function handleArchiveSnap(snap: Snap) {
+  async function handleToggleArchived(snap: Snap) {
     if (!user?.id) {
       return;
     }
 
     await runSnapMutation(snap, 'archive', async () => {
-      await setSnapArchived(user.id, snap.id, true);
+      await setSnapArchived(user.id, snap.id, !snap.isArchived);
     });
   }
 
@@ -502,20 +556,54 @@ export default function TrayScreen() {
         data={visibleTraySnaps}
         keyExtractor={(snap) => snap.id}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 150 }}
+        contentContainerStyle={{ paddingBottom: occupiedHeight + theme.spacing.md + (selection.isSelectionMode ? bulkBarHeight + theme.spacing.md : 0) }}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
         ListHeaderComponent={(
           <>
-            <AppHeader />
+            <AppHeader searchIconName="inbox" />
 
-            <View style={{ marginBottom: theme.spacing.lg }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md }}>
-              <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>The Tray</Text>
-              <PillButton label={selection.isSelectionMode ? 'Clear Selection' : 'Select'} size="sm" variant="secondary" onPress={selection.isSelectionMode ? selection.clear : selection.enter} disabled={isBulkBusy || visibleTraySnaps.length === 0} />
-              </View>
-              <Text style={[textStyles.bodySm, { maxWidth: '92%' }]}>The Tray is your inbox for unorganized Snaps. Move keepers into Shelves, star what matters, archive the rest.</Text>
+            <ScreenTitle
+              title="The Tray"
+              description="The Tray is your inbox for unorganized Snaps. Move keepers into Shelves, star what matters, archive the rest."
+            />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, backgroundColor: theme.colors.surface, borderRadius: theme.radii.pill, borderWidth: 1, borderColor: theme.colors.borderSoft, paddingHorizontal: 16, marginBottom: theme.spacing.md }}>
+              <Feather name="search" size={18} color={theme.colors.textMuted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search titles, thoughts, labels, or sources"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                style={{ flex: 1, minHeight: 52, color: theme.colors.text, fontFamily: theme.typography.fonts.medium, fontSize: 15 }}
+              />
+              {searchQuery ? <Pressable onPress={() => setSearchQuery('')} hitSlop={10}><Feather name="x-circle" size={18} color={theme.colors.textMuted} /></Pressable> : null}
             </View>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: theme.spacing.sm, marginBottom: theme.spacing.md }}>
+              <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 110 }}>
+                <CompactControlPill label="Filters" icon="sliders" badgeCount={advancedFilterCount} fullWidth isActive={advancedFilterCount > 0} onPress={() => setIsFilterSheetVisible(true)} />
+              </View>
+              <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 110 }}>
+                <CompactControlPill label="Sort" detail={isCompactWidth ? undefined : sortLabel} icon="arrow-down" fullWidth isActive={sort !== 'newest'} onPress={() => setIsSortSheetVisible(true)} />
+              </View>
+              <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 44 }}>
+                <CompactControlPill label="Favorites" icon="heart" iconOnly={!isCompactWidth} fullWidth isActive={favoritesOnly} onPress={() => setFavoritesOnly((current) => !current)} accessibilityLabel={favoritesOnly ? 'Disable favorites filter' : 'Enable favorites filter'} />
+              </View>
+              <View style={{ flexGrow: 1, minWidth: isCompactWidth ? '47%' : 100 }}>
+                <CompactControlPill label={selection.isSelectionMode ? 'Clear' : 'Select'} icon={selection.isSelectionMode ? 'x' : 'check-square'} fullWidth isActive={selection.isSelectionMode} onPress={selection.isSelectionMode ? selection.clear : selection.enter} disabled={isBulkBusy || visibleTraySnaps.length === 0} />
+              </View>
+            </View>
+
+            {activeFilterCount > 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.md }}>
+                <Text style={textStyles.bodySm}>{visibleTraySnaps.length} matching loaded Snap{visibleTraySnaps.length === 1 ? '' : 's'}{hasMore ? '...' : ''}</Text>
+                <Pressable onPress={clearAllAppliedFilters} hitSlop={10}><Text style={[textStyles.bodySm, { color: theme.colors.primary }]}>Clear filters</Text></Pressable>
+              </View>
+            ) : null}
 
             {selection.isSelectionMode ? (
               <Pressable
@@ -547,6 +635,10 @@ export default function TrayScreen() {
               </SurfaceCard>
             ) : null}
 
+            {connectionError && traySnaps.length > 0 ? (
+              <Text accessibilityLiveRegion="polite" style={[textStyles.bodySm, { color: theme.colors.textMuted, marginBottom: theme.spacing.md }]}>Connection interrupted. Showing loaded Snaps while SnapShelf reconnects.</Text>
+            ) : null}
+
             {isLoadingSnaps ? (
               <SurfaceCard style={{ padding: theme.spacing.lg, marginBottom: theme.spacing.lg }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
@@ -559,8 +651,8 @@ export default function TrayScreen() {
             {!isLoadingSnaps && !loadingMore && visibleTraySnaps.length === 0 ? (
               <View>
                 <EmptyState
-                  title="Your Tray is clear"
-                  description={__DEV__ ? 'Seed sample data from Settings or add a Quick Snap to test moving live Snaps into Shelves.' : 'New Snaps shared into SnapShelf land here first, then leave once you file them into Shelves.'}
+                  title={hasSearch || activeFilterCount > 0 ? 'No Snaps match' : 'Your Tray is clear'}
+                  description={hasSearch || activeFilterCount > 0 ? 'Try a broader search or clear a filter.' : (__DEV__ ? 'Seed sample data from Settings or add a Quick Snap to test moving live Snaps into Shelves.' : 'New Snaps shared into SnapShelf land here first, then leave once you file them into Shelves.')}
                 />
                 {!isLoadingShelves && shelves.length === 0 ? (
                   <SurfaceCard style={{ marginTop: theme.spacing.lg, padding: theme.spacing.lg }}>
@@ -597,8 +689,8 @@ export default function TrayScreen() {
             onToggleFavorite={() => {
               void handleToggleFavorite(snap);
             }}
-            onArchive={() => {
-              void handleArchiveSnap(snap);
+            onToggleArchived={() => {
+              void handleToggleArchived(snap);
             }}
             onDelete={() => handleConfirmDeleteSnap(snap)}
             isSelectionMode={selection.isSelectionMode}
@@ -617,7 +709,7 @@ export default function TrayScreen() {
         style={{
           position: 'absolute',
           right: theme.spacing.xl,
-          bottom: 118,
+          bottom: overlayClearance,
           zIndex: 10,
           width: 56,
           height: 56,
@@ -639,15 +731,47 @@ export default function TrayScreen() {
         <SnapBulkActionBar
           selectedCount={selection.selectedIds.size}
           isBusy={isBulkBusy}
+          onHeightChange={setBulkBarHeight}
           actions={[
             { label: 'Move', icon: 'folder', disabled: selection.selectedIds.size === 0 || !canMoveSnaps, onPress: () => setIsBulkMoveVisible(true) },
             { label: 'Favorite', icon: 'star', disabled: selection.selectedIds.size === 0, onPress: () => void runBulkAction(() => bulkFavoriteSnaps(user?.id ?? '', [...selection.selectedIds]), 'favorited') },
-            { label: 'Archive', icon: 'archive', disabled: selection.selectedIds.size === 0, onPress: () => void runBulkAction(() => bulkSetSnapsArchived(user?.id ?? '', [...selection.selectedIds], true), 'archived') },
+            ...(selectedActiveSnaps.length > 0 ? [{ label: 'Archive', icon: 'archive' as const, affectedCount: selectedActiveSnaps.length, onPress: () => void runBulkAction(() => bulkSetSnapsArchived(user?.id ?? '', selectedActiveSnaps.map((snap) => snap.id), true), 'archived') }] : []),
+            ...(selectedArchivedSnaps.length > 0 ? [{ label: 'Restore', icon: 'rotate-ccw' as const, affectedCount: selectedArchivedSnaps.length, onPress: () => void runBulkAction(() => bulkSetSnapsArchived(user?.id ?? '', selectedArchivedSnaps.map((snap) => snap.id), false), 'restored') }] : []),
             { label: 'Delete', icon: 'trash-2', tone: 'destructive', disabled: selection.selectedIds.size === 0, onPress: handleBulkDeleteConfirmation },
             { label: 'Clear', icon: 'x', onPress: selection.clear },
           ]}
         />
       ) : null}
+
+      <LibraryFilterSheet
+        visible={isFilterSheetVisible}
+        title="Refine The Tray"
+        description="Filter Snaps that are currently in The Tray. Location stays fixed here."
+        showLocationFilter={false}
+        labelOptions={labelOptions}
+        sourceOptions={snapSourceOptions}
+        dateOptions={snapDateOptions}
+        statusOptions={snapStatusOptions}
+        selectedStatus={status}
+        selectedSource={selectedSource}
+        selectedLabel={selectedLabel}
+        selectedDateRange={selectedDateRange}
+        visibleSnapCount={visibleTraySnaps.length}
+        onClose={() => setIsFilterSheetVisible(false)}
+        onReset={resetSheetFilters}
+        onSelectStatus={setStatus}
+        onSelectSource={setSelectedSource}
+        onSelectLabel={setSelectedLabel}
+        onSelectDateRange={setSelectedDateRange}
+      />
+
+      <ActionSheetModal
+        visible={isSortSheetVisible}
+        title="Sort The Tray"
+        description="Choose how the current Tray results should be ordered."
+        actions={snapSortOptions.map((option) => ({ label: option.label, icon: option.value === sort ? 'check' : undefined, onPress: () => { setSort(option.value); setIsSortSheetVisible(false); } }))}
+        onClose={() => setIsSortSheetVisible(false)}
+      />
 
       <ShelfPickerModal
         visible={selectedSnap !== null}
@@ -738,7 +862,7 @@ export default function TrayScreen() {
         onClose={() => setDetailSnap(null)}
         onSave={handleSaveSnapDetails}
         onToggleFavorite={handleToggleFavorite}
-        onToggleArchived={handleArchiveSnap}
+        onToggleArchived={handleToggleArchived}
         onReplaceImage={handleReplaceSnapImage}
         onRemoveImageReference={handleRemoveSnapImageReference}
         onDelete={handleConfirmDeleteSnap}

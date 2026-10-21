@@ -219,7 +219,7 @@ export function CreateSnapModal({
     return (
       <Modal visible animationType="fade" transparent onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: 'rgba(46, 35, 26, 0.24)', justifyContent: 'center', paddingHorizontal: theme.spacing.lg }}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Import Complete</Text>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.sm }]}>{savedCount} Snaps saved</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Your photos are stored on this device and their shared context is ready in {destinationLabel}.</Text>
@@ -245,7 +245,7 @@ export function CreateSnapModal({
           accessibilityRole="button"
           accessibilityLabel="Close create Snap dialog"
         />
-        <SurfaceCard style={{ maxHeight: '92%' }}>
+        <SurfaceCard modal style={{ maxHeight: '92%' }}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"

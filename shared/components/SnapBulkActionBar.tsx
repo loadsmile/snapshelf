@@ -1,9 +1,10 @@
 import { Feather } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View, type LayoutChangeEvent } from 'react-native';
 
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
+import { useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 
 type BulkAction = {
   affectedCount?: number;
@@ -14,9 +15,12 @@ type BulkAction = {
   tone?: 'default' | 'destructive';
 };
 
-export function SnapBulkActionBar({ actions, isBusy, selectedCount }: { actions: BulkAction[]; isBusy: boolean; selectedCount: number }) {
+export function SnapBulkActionBar({ actions, isBusy, selectedCount, onHeightChange }: { actions: BulkAction[]; isBusy: boolean; selectedCount: number; onHeightChange?: (height: number) => void }) {
+  const { overlayClearance } = useBottomTabGeometry();
+  const handleLayout = (event: LayoutChangeEvent) => onHeightChange?.(event.nativeEvent.layout.height);
+
   return (
-    <SurfaceCard style={{ position: 'absolute', left: theme.spacing.lg, right: theme.spacing.lg, bottom: 112, zIndex: 20, padding: theme.spacing.sm }}>
+    <SurfaceCard onLayout={handleLayout} style={{ position: 'absolute', left: theme.spacing.lg, right: theme.spacing.lg, bottom: overlayClearance, zIndex: 20, padding: theme.spacing.sm }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, marginBottom: theme.spacing.xs }}>
         <Text accessibilityLiveRegion="polite" style={textStyles.titleMd}>{selectedCount} selected</Text>
         {isBusy ? <ActivityIndicator size="small" color={theme.colors.primary} /> : null}

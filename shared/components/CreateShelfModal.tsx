@@ -65,7 +65,7 @@ export function CreateShelfModal({ visible, stacks = [], isSubmitting = false, e
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Shelf</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Give this collection a name, then decide whether it belongs in a Stack on the Board.</Text>
 

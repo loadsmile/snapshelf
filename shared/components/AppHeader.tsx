@@ -22,12 +22,14 @@ export function AppHeader({ onPressSearch, searchIconName = 'search', searchButt
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Image
-          source={require('../../assets/icon.png')}
-          style={{ width: 38, height: 32 }}
-          resizeMode="contain"
-          accessibilityIgnoresInvertColors
-        />
+        <View style={{ width: 38, height: 32, overflow: 'hidden' }}>
+          <Image
+            source={require('../../assets/adaptive-icon.png')}
+            style={{ position: 'absolute', width: 76, height: 64, left: -19, top: -16 }}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
+        </View>
         <Text style={textStyles.brand}>SnapShelf</Text>
       </View>
       {onPressSearch ? (

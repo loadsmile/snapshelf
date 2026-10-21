@@ -16,7 +16,7 @@ export function CaptureFirstOnboardingModal({ onChoosePhotos, onSkip, visible }:
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onSkip}>
       <View style={{ flex: 1, backgroundColor: 'rgba(46, 35, 26, 0.32)', justifyContent: 'center', paddingHorizontal: theme.spacing.lg }}>
-        <SurfaceCard style={{ padding: theme.spacing.lg }} testID="capture-first-onboarding-modal">
+        <SurfaceCard modal style={{ padding: theme.spacing.lg }} testID="capture-first-onboarding-modal">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.lg }}>
             <Text style={textStyles.brand}>SnapShelf</Text>
             <Pressable onPress={onSkip} hitSlop={10} accessibilityRole="button" accessibilityLabel="Skip choosing first photos">

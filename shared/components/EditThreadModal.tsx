@@ -51,7 +51,7 @@ export function EditThreadModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Edit Thread</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>A Stack draws a visible thread on the Board, helping related Shelves stay grouped without becoming a Shelf itself.</Text>
 

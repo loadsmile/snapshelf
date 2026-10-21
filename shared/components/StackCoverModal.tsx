@@ -69,7 +69,7 @@ export function StackCoverModal({ visible, stack, isSubmitting, error, onClose, 
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Stack Cover</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Choose a visual cover for this Stack. Snaps still live inside Shelves.</Text>
 

@@ -6,6 +6,8 @@ import { deleteImageLocally, saveImageLocally } from '@/features/images/local';
 import { getMediaLocationMap, type MediaLocationConfig } from '@/features/images/locations';
 import { getDeviceId } from '@/services/device';
 import { requireSupabaseClient } from '@/services/supabase';
+import { subscribeToAppRecovery } from '@/services/app-lifecycle';
+import { logRealtimeError, RealtimeConnectionError, type RealtimeConnectionStatus } from '@/features/snaps/realtime';
 
 const DEFAULT_SNAP_PAGE_SIZE = 20;
 export const MAX_SNAP_IMPORT_COUNT = 20;
@@ -153,6 +155,8 @@ function subscribeToSnapRefetch(
   refetch: (shouldApply: () => boolean) => Promise<void>,
   onError: ((error: Error) => void) | undefined,
   errorMessage: string,
+  onConnectionError?: (error: Error) => void,
+  onConnectionRecovered?: () => void,
 ) {
   const client = requireSupabaseClient();
   let isSubscribed = true;
@@ -161,6 +165,10 @@ function subscribeToSnapRefetch(
   let isRefetchQueued = false;
 
   const guardedRefetch = async () => {
+    if (!isSubscribed) {
+      return;
+    }
+
     if (isRefetching) {
       isRefetchQueued = true;
       return;
@@ -174,6 +182,9 @@ function subscribeToSnapRefetch(
 
       try {
         await refetch(() => isSubscribed && request === latestRequest);
+        if (isSubscribed && request === latestRequest) {
+          onConnectionRecovered?.();
+        }
       } catch (error) {
         if (isSubscribed) {
           onError?.(error instanceof Error ? error : new Error(errorMessage));
@@ -196,19 +207,35 @@ function subscribeToSnapRefetch(
         filter: `user_id=eq.${userId}`,
       },
       () => {
-        void guardedRefetch();
+        if (isSubscribed) {
+          void guardedRefetch();
+        }
       },
     )
     .subscribe((status, error) => {
+      if (!isSubscribed) {
+        return;
+      }
+
       if (status === 'SUBSCRIBED') {
         void guardedRefetch();
-      } else if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
-        onError?.(error instanceof Error ? error : new Error('Snap realtime subscription failed.'));
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        const connectionError = new RealtimeConnectionError(status as RealtimeConnectionStatus, error instanceof Error ? error : undefined);
+        logRealtimeError('Snap', connectionError);
+        onConnectionError?.(connectionError);
       }
     });
 
+  const unsubscribeFromRecovery = subscribeToAppRecovery(() => {
+    void guardedRefetch();
+  });
+
+  void guardedRefetch();
+
   return () => {
     isSubscribed = false;
+    latestRequest += 1;
+    unsubscribeFromRecovery();
     void client.removeChannel(channel);
   };
 }
@@ -486,7 +513,7 @@ export async function getSnap(userId: string, snapId: string): Promise<Snap | nu
   return snap;
 }
 
-export function subscribeToAllSnaps(userId: string, callback: (snaps: Snap[]) => void, onError?: (error: Error) => void, pageSize?: number) {
+export function subscribeToAllSnaps(userId: string, callback: (snaps: Snap[]) => void, onError?: (error: Error) => void, pageSize?: number, onConnectionError?: (error: Error) => void, onConnectionRecovered?: () => void) {
   return subscribeToSnapRefetch(
     userId,
     async (shouldApply) => {
@@ -511,6 +538,8 @@ export function subscribeToAllSnaps(userId: string, callback: (snaps: Snap[]) =>
     },
     onError,
     'Unable to load Snaps.',
+    onConnectionError,
+    onConnectionRecovered,
   );
 }
 
@@ -524,6 +553,8 @@ export function subscribeToTraySnaps(
   onError?: (error: Error) => void,
   cursor?: SnapCursor,
   pageSize: number | (() => number) = DEFAULT_SNAP_PAGE_SIZE,
+  onConnectionError?: (error: Error) => void,
+  onConnectionRecovered?: () => void,
 ) {
   return subscribeToSnapRefetch(
     userId,
@@ -537,6 +568,8 @@ export function subscribeToTraySnaps(
     },
     onError,
     'Unable to load tray Snaps.',
+    onConnectionError,
+    onConnectionRecovered,
   );
 }
 
@@ -556,6 +589,8 @@ export function subscribeToShelfSnaps(
   onError?: (error: Error) => void,
   cursor?: SnapCursor,
   pageSize: number | (() => number) = DEFAULT_SNAP_PAGE_SIZE,
+  onConnectionError?: (error: Error) => void,
+  onConnectionRecovered?: () => void,
 ) {
   return subscribeToSnapRefetch(
     userId,
@@ -569,6 +604,8 @@ export function subscribeToShelfSnaps(
     },
     onError,
     'Unable to load Shelf Snaps.',
+    onConnectionError,
+    onConnectionRecovered,
   );
 }
 

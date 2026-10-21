@@ -51,7 +51,7 @@ export function CreateStackModal({ visible, isSubmitting = false, error, onClose
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>New Stack</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Create a visual group for related Shelves on your Board. Snaps still live inside Shelves.</Text>
 

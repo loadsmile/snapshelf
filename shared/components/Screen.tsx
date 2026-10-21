@@ -3,6 +3,7 @@ import { ScrollView, ScrollViewProps, StyleProp, View, ViewStyle } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '@/shared/theme';
+import { useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 
 type ScreenProps = {
   children: ReactNode;
@@ -10,9 +11,11 @@ type ScreenProps = {
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: ScrollViewProps['contentContainerStyle'];
   scrollViewProps?: Omit<ScrollViewProps, 'contentContainerStyle' | 'showsVerticalScrollIndicator' | 'style'>;
+  tabBarAware?: boolean;
 };
 
-export function Screen({ children, scrollable = false, style, contentContainerStyle, scrollViewProps }: ScreenProps) {
+export function Screen({ children, scrollable = false, style, contentContainerStyle, scrollViewProps, tabBarAware = false }: ScreenProps) {
+  const { occupiedHeight } = useBottomTabGeometry();
   const baseStyle: StyleProp<ViewStyle> = [
     {
       flex: 1,
@@ -32,7 +35,7 @@ export function Screen({ children, scrollable = false, style, contentContainerSt
           contentContainerStyle={[
             {
               paddingTop: theme.spacing.md,
-              paddingBottom: theme.spacing.xxl,
+              paddingBottom: tabBarAware ? occupiedHeight + theme.spacing.md : theme.spacing.xxl,
             },
             contentContainerStyle,
           ]}

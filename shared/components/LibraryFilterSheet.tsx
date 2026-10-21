@@ -25,13 +25,16 @@ type StatusOption = {
 
 type LibraryFilterSheetProps = {
   visible: boolean;
-  shelves: Shelf[];
+  title?: string;
+  description?: string;
+  shelves?: Shelf[];
+  showLocationFilter?: boolean;
   labelOptions: string[];
   sourceOptions: SourceOption[];
   dateOptions: DateOption[];
   statusOptions: StatusOption[];
   selectedStatus: SnapLibraryStatus;
-  selectedShelfId: 'all' | 'tray' | string;
+  selectedShelfId?: 'all' | 'tray' | string;
   selectedSource: SnapSource | 'all';
   selectedLabel: string | 'all';
   selectedDateRange: SnapLibraryDateRange;
@@ -39,7 +42,7 @@ type LibraryFilterSheetProps = {
   onClose: () => void;
   onReset: () => void;
   onSelectStatus: (value: SnapLibraryStatus) => void;
-  onSelectShelf: (value: 'all' | 'tray' | string) => void;
+  onSelectShelf?: (value: 'all' | 'tray' | string) => void;
   onSelectSource: (value: SnapSource | 'all') => void;
   onSelectLabel: (value: string | 'all') => void;
   onSelectDateRange: (value: SnapLibraryDateRange) => void;
@@ -84,13 +87,16 @@ function SheetOptionPill({ label, isActive, onPress }: { label: string; isActive
 
 export function LibraryFilterSheet({
   visible,
-  shelves,
+  title = 'Refine Library',
+  description = 'Pick a few quick signals. Your Library updates as you choose.',
+  shelves = [],
+  showLocationFilter = true,
   labelOptions,
   sourceOptions,
   dateOptions,
   statusOptions,
   selectedStatus,
-  selectedShelfId,
+  selectedShelfId = 'all',
   selectedSource,
   selectedLabel,
   selectedDateRange,
@@ -107,7 +113,7 @@ export function LibraryFilterSheet({
   const insets = useSafeAreaInsets();
   const hasAdvancedFilters =
     selectedStatus !== 'active' ||
-    selectedShelfId !== 'all' ||
+    (showLocationFilter && selectedShelfId !== 'all') ||
     selectedSource !== 'all' ||
     selectedLabel !== 'all' ||
     selectedDateRange !== 'any';
@@ -132,8 +138,8 @@ export function LibraryFilterSheet({
             backgroundColor: theme.colors.surface,
             borderTopLeftRadius: theme.radii.xl,
             borderTopRightRadius: theme.radii.xl,
-            borderWidth: 1,
-            borderColor: theme.colors.borderSoft,
+            borderWidth: 0.5,
+            borderColor: theme.colors.primary,
             paddingTop: theme.spacing.sm,
             ...theme.shadows.card,
           }}
@@ -150,8 +156,8 @@ export function LibraryFilterSheet({
           </View>
 
           <View style={{ paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md }}>
-            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Refine Library</Text>
-            <Text style={textStyles.bodySm}>Pick a few quick signals. Your Library updates as you choose.</Text>
+            <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>{title}</Text>
+            <Text style={textStyles.bodySm}>{description}</Text>
           </View>
 
           <ScrollView
@@ -167,13 +173,15 @@ export function LibraryFilterSheet({
               ))}
             </SheetSection>
 
-            <SheetSection title="Where it lives">
-              <SheetOptionPill label="All Shelves" isActive={selectedShelfId === 'all'} onPress={() => onSelectShelf('all')} />
-              <SheetOptionPill label="The Tray" isActive={selectedShelfId === 'tray'} onPress={() => onSelectShelf('tray')} />
-              {shelves.map((shelf) => (
-                <SheetOptionPill key={shelf.id} label={shelf.name} isActive={selectedShelfId === shelf.id} onPress={() => onSelectShelf(shelf.id)} />
-              ))}
-            </SheetSection>
+            {showLocationFilter && onSelectShelf ? (
+              <SheetSection title="Where it lives">
+                <SheetOptionPill label="All Shelves" isActive={selectedShelfId === 'all'} onPress={() => onSelectShelf('all')} />
+                <SheetOptionPill label="The Tray" isActive={selectedShelfId === 'tray'} onPress={() => onSelectShelf('tray')} />
+                {shelves.map((shelf) => (
+                  <SheetOptionPill key={shelf.id} label={shelf.name} isActive={selectedShelfId === shelf.id} onPress={() => onSelectShelf(shelf.id)} />
+                ))}
+              </SheetSection>
+            ) : null}
 
             <SheetSection title="Source">
               {sourceOptions.map((option) => (

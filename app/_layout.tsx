@@ -2,9 +2,10 @@ import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { getShareExtensionKey, ShareIntentModule, ShareIntentProvider } from 'expo-share-intent';
 import * as SplashScreen from 'expo-splash-screen';
+import * as NavigationBar from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Text, View } from 'react-native';
+import { AppState, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from '@/features/auth/AuthProvider';
@@ -12,6 +13,10 @@ import { useAuth } from '@/features/auth/useAuth';
 import { RetainedShareIntentProvider, useRetainedShareIntentContext } from '@/shared/providers/RetainedShareIntentProvider';
 import { theme, ThemeProvider, useThemeMode } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
+import { darkColors, lightColors } from '@/shared/theme/tokens';
+import { supabase } from '@/services/supabase';
+import { requestAppRecovery } from '@/services/app-lifecycle';
+import { handleAppStateChange } from '@/services/app-state';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore duplicate calls during Fast Refresh.
@@ -50,6 +55,36 @@ export default function RootLayout() {
 
 function AppProviders() {
   const { mode } = useThemeMode();
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    Promise.all([
+      NavigationBar.setBackgroundColorAsync(mode === 'dark' ? darkColors.background : lightColors.background),
+      NavigationBar.setButtonStyleAsync(mode === 'dark' ? 'light' : 'dark'),
+    ]).catch(() => {
+      // Keep rendering if system navigation styling is unavailable.
+    });
+  }, [mode]);
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    const client = supabase;
+    const dependencies = {
+      startAutoRefresh: () => client.auth.startAutoRefresh(),
+      stopAutoRefresh: () => client.auth.stopAutoRefresh(),
+      recover: requestAppRecovery,
+    };
+    handleAppStateChange(AppState.currentState, dependencies);
+    const subscription = AppState.addEventListener('change', (state) => handleAppStateChange(state, dependencies));
+
+    return () => subscription.remove();
+  }, []);
 
   return (
     <>

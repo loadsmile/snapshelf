@@ -1,9 +1,9 @@
 import { Feather } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BoardIcon } from '@/shared/components/icons/BoardIcon';
+import { BOTTOM_TAB_CONTENT_HEIGHT, useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 import { theme, useThemeMode } from '@/shared/theme';
 
 function renderIcon(routeName: string, color: string, focused: boolean) {
@@ -23,25 +23,28 @@ function renderIcon(routeName: string, color: string, focused: boolean) {
 }
 
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const insets = useSafeAreaInsets();
+  const { bottomInset, barHeight } = useBottomTabGeometry();
   useThemeMode();
 
   return (
     <View
       style={{
         position: 'absolute',
-        left: 18,
-        right: 18,
-        bottom: Math.max(insets.bottom, 10) + 8,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: barHeight,
         backgroundColor: theme.colors.surface,
-        borderRadius: 34,
-        padding: 10,
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.borderSoft,
+        paddingBottom: bottomInset,
         flexDirection: 'row',
         shadowColor: theme.colors.shadow,
         shadowOpacity: 0.1,
-        shadowRadius: 22,
-        shadowOffset: { width: 0, height: 12 },
-        elevation: 10,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: -4 },
+        elevation: 12,
+        zIndex: 100,
       }}
     >
       {state.routes.map((route, index) => {
@@ -72,24 +75,24 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             key={route.key}
             onPress={onPress}
             testID={`tab-${route.name}`}
-            style={{ flex: 1, marginHorizontal: 6 }}
+            style={{ flex: 1, minHeight: 44 }}
           >
             <View
               style={{
-                borderRadius: 28,
+                borderRadius: 0,
                 backgroundColor: focused ? theme.colors.primary : 'transparent',
-                minHeight: 72,
+                height: BOTTOM_TAB_CONTENT_HEIGHT,
                 alignItems: 'center',
                 justifyContent: 'center',
                 paddingHorizontal: 10,
-                paddingVertical: 10,
+                paddingVertical: 4,
                 overflow: 'hidden',
               }}
             >
               {renderIcon(route.name, activeColor, focused)}
               <Text
                 style={{
-                  marginTop: 8,
+                  marginTop: 2,
                   fontFamily: theme.typography.fonts.medium,
                   fontSize: 11,
                   textTransform: 'uppercase',

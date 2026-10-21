@@ -100,7 +100,7 @@ export function OnboardingWelcomeModal({
           paddingHorizontal: theme.spacing.lg,
         }}
       >
-        <SurfaceCard style={{ padding: theme.spacing.lg }} testID="onboarding-welcome-modal">
+        <SurfaceCard modal style={{ padding: theme.spacing.lg }} testID="onboarding-welcome-modal">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md, marginBottom: theme.spacing.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
               {!isFirstStep ? (

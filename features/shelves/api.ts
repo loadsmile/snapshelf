@@ -4,6 +4,8 @@ import { validateOrganizationName } from '@/features/organizations/name';
 import type { CreateShelfInput, Shelf, ShelfBoardVariant, UpdateShelfCoverInput } from '@/features/shelves/types';
 import { deleteThreadsForShelf } from '@/features/threads/api';
 import { requireSupabaseClient } from '@/services/supabase';
+import { subscribeToAppRecovery } from '@/services/app-lifecycle';
+import { logRealtimeError, RealtimeConnectionError, type RealtimeConnectionStatus } from '@/features/snaps/realtime';
 
 const boardLayoutPresets: Array<{ boardX: number; boardY: number; boardVariant: ShelfBoardVariant }> = [
   { boardX: 320, boardY: 470, boardVariant: 'primary' },
@@ -158,15 +160,20 @@ export async function listShelves(userId: string): Promise<Shelf[]> {
   return mapShelvesForCurrentDevice(userId, data as ShelfRow[]);
 }
 
-export function subscribeToShelves(userId: string, callback: (shelves: Shelf[]) => void, onError?: (error: Error) => void) {
+export function subscribeToShelves(userId: string, callback: (shelves: Shelf[]) => void, onError?: (error: Error) => void, onConnectionError?: (error: Error) => void, onConnectionRecovered?: () => void) {
   const client = requireSupabaseClient();
   let isSubscribed = true;
 
   const refetchShelves = async () => {
+    if (!isSubscribed) {
+      return;
+    }
+
     try {
       const shelves = await listShelves(userId);
       if (isSubscribed) {
         callback(shelves);
+        onConnectionRecovered?.();
       }
     } catch (error) {
       if (isSubscribed) {
@@ -188,17 +195,32 @@ export function subscribeToShelves(userId: string, callback: (shelves: Shelf[]) 
         filter: `user_id=eq.${userId}`,
       },
       () => {
-        void refetchShelves();
+        if (isSubscribed) {
+          void refetchShelves();
+        }
       },
     )
     .subscribe((status, error) => {
-      if (isSubscribed && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
-        onError?.(error instanceof Error ? error : new Error('Shelf realtime subscription failed.'));
+      if (!isSubscribed) {
+        return;
+      }
+
+      if (status === 'SUBSCRIBED') {
+        void refetchShelves();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        const connectionError = new RealtimeConnectionError(status as RealtimeConnectionStatus, error instanceof Error ? error : undefined);
+        logRealtimeError('Shelf', connectionError);
+        onConnectionError?.(connectionError);
       }
     });
 
+  const unsubscribeFromRecovery = subscribeToAppRecovery(() => {
+    void refetchShelves();
+  });
+
   return () => {
     isSubscribed = false;
+    unsubscribeFromRecovery();
     void client.removeChannel(channel);
   };
 }

@@ -42,7 +42,7 @@ export function PostSaveConfirmationModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ padding: theme.spacing.lg, borderRadius: theme.radii.xl }} testID="post-save-confirmation">
+          <SurfaceCard modal style={{ padding: theme.spacing.lg, borderRadius: theme.radii.xl }} testID="post-save-confirmation">
             <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Saved</Text>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Saved to {destinationLabel}</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Your Snap is ready. View it now, keep moving, or undo this save.</Text>

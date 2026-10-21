@@ -90,7 +90,7 @@ export function ShelfCoverModal({
         }}
       >
         <Pressable onPress={(event) => event.stopPropagation()}>
-          <SurfaceCard style={{ maxHeight: '88%', padding: theme.spacing.lg }}>
+          <SurfaceCard modal style={{ maxHeight: '88%', padding: theme.spacing.lg }}>
             <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Shelf Cover</Text>
             <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Choose a dedicated cover photo or use one of this Shelf's Snaps.</Text>
 

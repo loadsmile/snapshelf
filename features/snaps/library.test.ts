@@ -99,6 +99,12 @@ describe('library snap helpers', () => {
     expect(filterLibrarySnaps(snaps, buildFilters({ favoritesOnly: true }), shelfNamesById, now).map((snap) => snap.id)).toEqual(['active-favorite']);
   });
 
+  it('keeps Tray filtering fixed to unfiled Snaps while searching and refining', () => {
+    expect(filterLibrarySnaps(snaps, buildFilters({ shelfId: 'tray', query: 'packing', source: 'web-clip' }), shelfNamesById, now).map((snap) => snap.id)).toEqual(['tray-snap']);
+    expect(filterLibrarySnaps(snaps, buildFilters({ shelfId: 'tray', query: 'morning' }), shelfNamesById, now)).toEqual([]);
+    expect(filterLibrarySnaps(snaps, buildFilters({ shelfId: 'tray', status: 'archived' }), shelfNamesById, now)).toEqual([]);
+  });
+
   it('supports date and favorites sorting', () => {
     expect(filterLibrarySnaps(snaps, buildFilters({ dateRange: '30d' }), shelfNamesById, now).map((snap) => snap.id)).toEqual(['active-favorite']);
 

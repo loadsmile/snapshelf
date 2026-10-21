@@ -40,6 +40,7 @@ import { Screen } from '@/shared/components/Screen';
 import { SectionLabel } from '@/shared/components/SectionLabel';
 import { SnapArtwork } from '@/shared/components/SnapArtwork';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
+import { useBottomTabGeometry } from '@/shared/hooks/useBottomTabGeometry';
 import { theme } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
@@ -919,7 +920,7 @@ function DraggableShelfNode({
   coverSnap,
   coverImageUri,
   onPress,
-  onDrag,
+  onDragMove,
   onDragEnd,
 }: {
   shelf: ReturnType<typeof getResolvedShelf>;
@@ -928,17 +929,29 @@ function DraggableShelfNode({
   coverSnap: Snap | null;
   coverImageUri: string | null;
   onPress: () => void;
-  onDrag: (x: number, y: number) => void;
+  onDragMove: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
 }) {
+  const nodeRef = useRef<View>(null);
   const startRef = useRef({ x: shelf.boardX, y: shelf.boardY });
+  const positionRef = useRef({ x: shelf.boardX, y: shelf.boardY });
   const movedRef = useRef(false);
+  const draggingRef = useRef(false);
+  const onPressRef = useRef(onPress);
+  const onDragMoveRef = useRef(onDragMove);
+  const onDragEndRef = useRef(onDragEnd);
   const colors = getShelfPalette(shelf.name);
   const dimensions = getNodeDimensions(shelf.boardVariant);
   const isPrimary = shelf.boardVariant === 'primary';
 
+  onPressRef.current = onPress;
+  onDragMoveRef.current = onDragMove;
+  onDragEndRef.current = onDragEnd;
+
   useEffect(() => {
-    startRef.current = { x: shelf.boardX, y: shelf.boardY };
+    if (!draggingRef.current) {
+      positionRef.current = { x: shelf.boardX, y: shelf.boardY };
+    }
   }, [shelf.boardX, shelf.boardY]);
 
   const panResponder = useMemo(
@@ -947,33 +960,44 @@ function DraggableShelfNode({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
         onPanResponderGrant: () => {
-          startRef.current = { x: shelf.boardX, y: shelf.boardY };
+          startRef.current = positionRef.current;
           movedRef.current = false;
+          draggingRef.current = true;
         },
         onPanResponderMove: (_, gestureState) => {
           movedRef.current = true;
-          onDrag(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - dimensions.width);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - dimensions.height - 54);
+          nodeRef.current?.setNativeProps({ style: { left: nextX, top: nextY } });
+          onDragMoveRef.current(nextX, nextY);
         },
         onPanResponderRelease: (_, gestureState) => {
-          const nextX = startRef.current.x + gestureState.dx / scale;
-          const nextY = startRef.current.y + gestureState.dy / scale;
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - dimensions.width);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - dimensions.height - 54);
+          draggingRef.current = false;
+          positionRef.current = { x: nextX, y: nextY };
 
           if (!movedRef.current) {
-            onPress();
+            onPressRef.current();
             return;
           }
 
-          onDragEnd(nextX, nextY);
+          onDragEndRef.current(nextX, nextY);
         },
         onPanResponderTerminate: (_, gestureState) => {
-          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - dimensions.width);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - dimensions.height - 54);
+          draggingRef.current = false;
+          positionRef.current = { x: nextX, y: nextY };
+          onDragEndRef.current(nextX, nextY);
         },
       }),
-    [onDrag, onDragEnd, onPress, scale, shelf.boardX, shelf.boardY],
+    [dimensions.height, dimensions.width, scale],
   );
 
   return (
     <View
+      ref={nodeRef}
       {...panResponder.panHandlers}
       style={{
         position: 'absolute',
@@ -1037,7 +1061,7 @@ function DraggableStackNode({
   shelfCount,
   coverImageUri,
   onPress,
-  onDrag,
+  onDragMove,
   onDragEnd,
 }: {
   stack: ReturnType<typeof getResolvedStack>;
@@ -1046,14 +1070,26 @@ function DraggableStackNode({
   shelfCount: number;
   coverImageUri: string | null;
   onPress: () => void;
-  onDrag: (x: number, y: number) => void;
+  onDragMove: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
 }) {
+  const nodeRef = useRef<View>(null);
   const startRef = useRef({ x: stack.boardX, y: stack.boardY });
+  const positionRef = useRef({ x: stack.boardX, y: stack.boardY });
   const movedRef = useRef(false);
+  const draggingRef = useRef(false);
+  const onPressRef = useRef(onPress);
+  const onDragMoveRef = useRef(onDragMove);
+  const onDragEndRef = useRef(onDragEnd);
+
+  onPressRef.current = onPress;
+  onDragMoveRef.current = onDragMove;
+  onDragEndRef.current = onDragEnd;
 
   useEffect(() => {
-    startRef.current = { x: stack.boardX, y: stack.boardY };
+    if (!draggingRef.current) {
+      positionRef.current = { x: stack.boardX, y: stack.boardY };
+    }
   }, [stack.boardX, stack.boardY]);
 
   const panResponder = useMemo(
@@ -1062,30 +1098,44 @@ function DraggableStackNode({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
         onPanResponderGrant: () => {
-          startRef.current = { x: stack.boardX, y: stack.boardY };
+          startRef.current = positionRef.current;
           movedRef.current = false;
+          draggingRef.current = true;
         },
         onPanResponderMove: (_, gestureState) => {
           movedRef.current = true;
-          onDrag(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - STACK_WIDTH);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - STACK_HEIGHT);
+          nodeRef.current?.setNativeProps({ style: { left: nextX, top: nextY } });
+          onDragMoveRef.current(nextX, nextY);
         },
         onPanResponderRelease: (_, gestureState) => {
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - STACK_WIDTH);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - STACK_HEIGHT);
+          draggingRef.current = false;
+          positionRef.current = { x: nextX, y: nextY };
+
           if (!movedRef.current) {
-            onPress();
+            onPressRef.current();
             return;
           }
 
-          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+          onDragEndRef.current(nextX, nextY);
         },
         onPanResponderTerminate: (_, gestureState) => {
-          onDragEnd(startRef.current.x + gestureState.dx / scale, startRef.current.y + gestureState.dy / scale);
+          const nextX = clamp(startRef.current.x + gestureState.dx / scale, 0, CANVAS_WIDTH - STACK_WIDTH);
+          const nextY = clamp(startRef.current.y + gestureState.dy / scale, 0, CANVAS_HEIGHT - STACK_HEIGHT);
+          draggingRef.current = false;
+          positionRef.current = { x: nextX, y: nextY };
+          onDragEndRef.current(nextX, nextY);
         },
       }),
-    [onDrag, onDragEnd, onPress, scale, stack.boardX, stack.boardY],
+    [scale],
   );
 
   return (
     <View
+      ref={nodeRef}
       {...panResponder.panHandlers}
       style={{
         position: 'absolute',
@@ -1229,6 +1279,7 @@ function StackCoverContent({ shelfCount, hasCover }: { shelfCount: number; hasCo
 }
 
 export default function BoardScreen() {
+  const { occupiedHeight } = useBottomTabGeometry();
   const { isConfigured, user } = useAuth();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<BoardViewMode>('grid');
@@ -1980,7 +2031,7 @@ export default function BoardScreen() {
   }
 
   return (
-    <Screen style={{ paddingBottom: 118 }}>
+    <Screen style={{ paddingBottom: occupiedHeight }}>
       <AppHeader onPressSearch={handleToggleSearch} searchIconName={isSearchVisible ? 'x' : 'search'} searchButtonTestID="board-search-open-button" />
 
       {isSearchVisible ? (
@@ -2079,7 +2130,7 @@ export default function BoardScreen() {
           {matchingStacks.length === 0 && matchingShelves.length === 0 && matchingSnaps.length === 0 ? (
             <EmptyState title="No matching results" description="Try a Stack or Shelf name, a title word, a phrase from your thought, or one of your labels." />
           ) : (
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 124, gap: theme.spacing.md }}>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: theme.spacing.md, gap: theme.spacing.md }}>
               {matchingStacks.length > 0 ? <Text style={textStyles.eyebrow}>Stacks</Text> : null}
               {matchingStacks.map((stack) => (
                 <StackListItem
@@ -2153,7 +2204,7 @@ export default function BoardScreen() {
                   ...theme.shadows.card,
                 }}
               >
-                <Feather name="help-circle" size={20} color={theme.colors.primary} />
+                <Feather name="info" size={20} color={theme.colors.primary} />
               </Pressable>
             ) : null}
           </View>
@@ -2255,7 +2306,7 @@ export default function BoardScreen() {
                         shelfCount={shelfCountsByStackId.get(stack.id) ?? 0}
                         coverImageUri={stackCoverImageUris.get(stack.id) ?? null}
                         onPress={() => setActionStack(stack)}
-                        onDrag={(x, y) => {
+                        onDragMove={(x, y) => {
                           handleStackDrag(stack.id, x, y);
                         }}
                         onDragEnd={(x, y) => {
@@ -2273,7 +2324,7 @@ export default function BoardScreen() {
                         coverSnap={shelfCoverSnaps.get(shelf.id) ?? null}
                         coverImageUri={shelfCoverImageUris.get(shelf.id) ?? null}
                         onPress={() => router.push(`/shelf/${shelf.id}`)}
-                        onDrag={(x, y) => {
+                        onDragMove={(x, y) => {
                           handleShelfDrag(shelf.id, x, y);
                         }}
                         onDragEnd={(x, y) => {
@@ -2325,7 +2376,7 @@ export default function BoardScreen() {
             <ScrollView
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 124 }}
+              contentContainerStyle={{ paddingBottom: theme.spacing.md }}
             >
               {resolvedStacks.length > 0 ? <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Stacks</Text> : null}
               {resolvedStacks.map((stack) => (

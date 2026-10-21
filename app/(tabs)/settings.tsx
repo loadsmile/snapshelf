@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Switch, Text, View } from 'react-native';
+import { Alert, Linking, Switch, Text, View } from 'react-native';
 
 import { getAuthErrorMessage } from '@/features/auth/api';
 import { useAuth } from '@/features/auth/useAuth';
@@ -14,7 +14,9 @@ import { FormField } from '@/shared/components/FormField';
 import { OnboardingWelcomeModal } from '@/shared/components/OnboardingWelcomeModal';
 import { PillButton } from '@/shared/components/PillButton';
 import { Screen } from '@/shared/components/Screen';
+import { ScreenTitle } from '@/shared/components/ScreenTitle';
 import { SurfaceCard } from '@/shared/components/SurfaceCard';
+import { isReleaseContactConfigured, releaseContact } from '@/shared/config/release';
 import { theme, useThemeMode } from '@/shared/theme';
 import { textStyles } from '@/shared/theme/typography';
 
@@ -170,14 +172,24 @@ export default function SettingsScreen() {
     router.push('/tray');
   }
 
+  async function handleOpenExternalLink(url: string, label: string) {
+    if (!isReleaseContactConfigured) {
+      Alert.alert('Support details unavailable', 'Release contact details have not been configured for this build.');
+      return;
+    }
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(`Unable to open ${label}`, `Please contact ${releaseContact.supportEmail}.`);
+    }
+  }
+
   return (
-    <Screen scrollable contentContainerStyle={{ paddingBottom: 150 }}>
+    <Screen scrollable tabBarAware>
       <AppHeader />
 
-      <View style={{ marginBottom: theme.spacing.xl }}>
-        <Text style={[textStyles.displaySm, { marginBottom: theme.spacing.xs }]}>Settings</Text>
-        <Text style={textStyles.bodyMd}>Manage your account and SnapShelf data.</Text>
-      </View>
+      <ScreenTitle title="Settings" description="Manage your account and SnapShelf data." marginBottom={theme.spacing.xl} />
 
       <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
         <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Appearance</Text>
@@ -209,6 +221,44 @@ export default function SettingsScreen() {
           testID="settings-revisit-tutorial-button"
           fullWidth
         />
+      </SurfaceCard>
+
+      <SurfaceCard style={{ marginBottom: theme.spacing.lg, padding: theme.spacing.lg }}>
+        <Text style={[textStyles.eyebrow, { marginBottom: theme.spacing.sm }]}>Help &amp; Privacy</Text>
+        <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Questions or privacy requests?</Text>
+        <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.lg }]}>Read how SnapShelf handles your data or contact the support team.</Text>
+        <PillButton
+          label="Privacy Policy"
+          icon="shield"
+          variant="secondary"
+          onPress={() => handleOpenExternalLink(releaseContact.privacyPolicyUrl, 'the privacy policy')}
+          testID="settings-privacy-policy-button"
+          disabled={!isReleaseContactConfigured}
+          fullWidth
+        />
+        <View style={{ height: theme.spacing.sm }} />
+        <PillButton
+          label="Contact Support"
+          icon="help-circle"
+          variant="secondary"
+          onPress={() => handleOpenExternalLink(releaseContact.supportUrl, 'support')}
+          testID="settings-contact-support-button"
+          disabled={!isReleaseContactConfigured}
+          fullWidth
+        />
+        <View style={{ height: theme.spacing.sm }} />
+        <PillButton
+          label="Email Support"
+          icon="mail"
+          variant="secondary"
+          onPress={() => handleOpenExternalLink(`mailto:${releaseContact.supportEmail}?subject=SnapShelf%20Support`, 'email')}
+          testID="settings-email-support-button"
+          disabled={!isReleaseContactConfigured}
+          fullWidth
+        />
+        {!isReleaseContactConfigured ? (
+          <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginTop: theme.spacing.sm }]}>Release contact details have not been configured for this build.</Text>
+        ) : null}
       </SurfaceCard>
 
       {isConfigured ? (
@@ -289,7 +339,7 @@ export default function SettingsScreen() {
             <View style={{ height: 1, backgroundColor: theme.colors.borderSoft, marginVertical: theme.spacing.lg }} />
 
             <Text style={[textStyles.titleMd, { marginBottom: theme.spacing.sm }]}>Delete account</Text>
-            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>This removes your profile, shelves, snaps, threads, and local snap images from this device.</Text>
+            <Text style={[textStyles.bodyMd, { marginBottom: theme.spacing.sm }]}>This removes your account and synced content. SnapShelf also attempts to remove its images on this device; images on other devices cannot be removed remotely.</Text>
             <Text style={[textStyles.bodySm, { color: theme.colors.primary, marginBottom: theme.spacing.lg }]}>To protect against mistakes, type DELETE and then enter your current password.</Text>
 
             <FormField
